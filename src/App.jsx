@@ -8,7 +8,7 @@ import {
   Activity, HeartPulse, Moon, Footprints, Dumbbell, Flame, Wind, FileText, Send,
   Copy, Check, AlertTriangle, TrendingUp, TrendingDown, Minus, ShieldCheck, ChevronRight,
   ChevronLeft, Database, FileSpreadsheet, FileCode, CheckCircle2, Stethoscope, ClipboardList, ThumbsUp,
-  Download,
+  Download, Calculator, Unlock, Clock,
 } from "lucide-react";
 import { logFeedback } from "./feedback.js";
 
@@ -682,7 +682,45 @@ export default function VisitPulse() {
         {/* Screen 0: Upload */}
         {screen === 0 && (
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Share your wearable data for an upcoming visit</h1>
+            {/* Vision hero */}
+            <section className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-teal-50/50 px-6 py-8 sm:px-9 sm:py-10">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-white/70 px-3 py-1 text-xs font-medium text-teal-700">
+                <ShieldCheck size={13} /> Patient-approved | non-diagnostic | clinician-in-the-loop
+              </div>
+              <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-4xl">
+                A patient's wearable data, turned into a brief their <span className="text-teal-700">own clinician</span> can actually read.
+              </h1>
+              <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-600">
+                Patients now walk in with months of Garmin and Apple Health data, and clinicians have minutes. VisitPulse
+                compresses 30 days of it into a one-page pre-visit brief - contextual to <span className="font-medium text-slate-700">who they're seeing and why</span> - so the useful signal isn't lost and the noise isn't a liability.
+              </p>
+
+              <div className="mt-7 grid gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><Calculator size={18} /></div>
+                  <div className="mt-3 font-semibold text-slate-800">No AI - auditable by design</div>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                    The brief is deterministic templates and rules, <span className="font-medium text-slate-600">not a language model</span>. Every line traces back to a number a clinician can verify - no hallucinations, nothing to second-guess.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><Unlock size={18} /></div>
+                  <div className="mt-3 font-semibold text-slate-800">The open layer</div>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                    Any wearable a patient owns, routed to the doctor they already see. Not a closed loop of one company's device and its own clinicians - <span className="font-medium text-slate-600">the patient's own data, their own physician</span>.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><Clock size={18} /></div>
+                  <div className="mt-3 font-semibold text-slate-800">Reads in 30 seconds - no new system</div>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                    A one-page brief and portal-ready message that drop into the chart workflow a clinician already uses. <span className="font-medium text-slate-600">No extra dashboard, login, or integration</span> to adopt for their limited visit time.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <h2 className="mt-9 text-2xl font-semibold tracking-tight">Share your wearable data for an upcoming visit</h2>
             <p className="mt-2 max-w-2xl text-slate-500">This is a <span className="font-medium text-slate-700">patient-approved Apple Health export</span> flow. Your phone exports your own data (Settings &gt; Health &gt; Export), and you choose to share a summary with your clinician. Nothing is pulled from your record, and no data leaves this device in the demo.</p>
 
             <div className="mt-7 grid gap-4 sm:grid-cols-3">
