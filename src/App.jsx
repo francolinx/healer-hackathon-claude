@@ -142,21 +142,32 @@ function parseJSON(text) {
   return normalizeRows(arr);
 }
 
-// Best-effort Apple Health export.xml parser. Guarded; falls back gracefully.
-function parseAppleHealthXML(text) {
-  const doc = new DOMParser().parseFromString(text, "application/xml");
-  if (doc.querySelector("parsererror")) throw new Error("That file is not valid XML.");
+// Streaming Apple Health export.xml parser. Real exports are commonly hundreds
+// of MB - too large to read into one string (JS max-string-length) or feed to
+// DOMParser. We read the file in byte-bounded slices and scan opening tags with
+// a regex, aggregating into daily buckets. Only the opening tag's attributes
+// (type/startDate/endDate/value) are needed; record children are ignored.
+// Angle brackets inside attribute values are XML-escaped in Apple exports, so
+// every literal '>' is a real tag terminator and we can split on it safely.
+// Bounded memory + a progress callback => multi-hundred-MB files parse fine.
+async function parseAppleHealthXML(file, onProgress) {
+  const CHUNK = 8 * 1024 * 1024; // 8 MB slices
+  const decoder = new TextDecoder("utf-8");
   const day = (s) => (s ? s.slice(0, 10) : null);
+  const attr = (tag, name) => { const m = tag.match(new RegExp(name + '="([^"]*)"')); return m ? m[1] : null; };
   const buckets = {};
   const ensure = (dt) => (buckets[dt] = buckets[dt] || { date: dt, _rhr: [], _hr: [], steps: 0, exercise_minutes: 0, active_energy: 0, _spo2: [], _sleep: 0, workouts: 0 });
 
-  const records = doc.getElementsByTagName("Record");
-  for (let i = 0; i < records.length; i++) {
-    const rec = records[i];
-    const type = rec.getAttribute("type");
-    const dt = day(rec.getAttribute("startDate"));
-    if (!dt) continue;
-    const val = parseFloat(rec.getAttribute("value"));
+  const handleTag = (tag) => {
+    if (tag.startsWith("<Workout")) {
+      const dt = day(attr(tag, "startDate"));
+      if (dt) ensure(dt).workouts += 1;
+      return;
+    }
+    const type = attr(tag, "type");
+    const dt = day(attr(tag, "startDate"));
+    if (!type || !dt) return;
+    const val = parseFloat(attr(tag, "value"));
     const b = ensure(dt);
     switch (type) {
       case "HKQuantityTypeIdentifierRestingHeartRate": if (!isNaN(val)) b._rhr.push(val); break;
@@ -166,20 +177,33 @@ function parseAppleHealthXML(text) {
       case "HKQuantityTypeIdentifierActiveEnergyBurned": if (!isNaN(val)) b.active_energy += val; break;
       case "HKQuantityTypeIdentifierOxygenSaturation": if (!isNaN(val)) b._spo2.push(val <= 1 ? val * 100 : val); break;
       case "HKCategoryTypeIdentifierSleepAnalysis": {
-        const start = new Date(rec.getAttribute("startDate"));
-        const end = new Date(rec.getAttribute("endDate"));
+        const start = new Date(attr(tag, "startDate"));
+        const end = new Date(attr(tag, "endDate"));
         const hrs = (end - start) / 3.6e6;
         if (hrs > 0 && hrs < 16) b._sleep += hrs;
         break;
       }
       default: break;
     }
+  };
+
+  const tagRe = /<(?:Record|Workout)\b[^>]*>/g;
+  const scan = (text) => { tagRe.lastIndex = 0; let m; while ((m = tagRe.exec(text))) handleTag(m[0]); };
+
+  let buffer = "";
+  let offset = 0;
+  while (offset < file.size) {
+    const buf = await file.slice(offset, offset + CHUNK).arrayBuffer();
+    offset += CHUNK;
+    buffer += decoder.decode(buf, { stream: offset < file.size });
+    const lastGt = buffer.lastIndexOf(">");
+    if (lastGt !== -1) {
+      scan(buffer.slice(0, lastGt + 1));
+      buffer = buffer.slice(lastGt + 1); // carry partial tag to next chunk
+    }
+    if (onProgress) onProgress(Math.min(offset, file.size) / file.size);
   }
-  const workouts = doc.getElementsByTagName("Workout");
-  for (let i = 0; i < workouts.length; i++) {
-    const dt = day(workouts[i].getAttribute("startDate"));
-    if (dt) ensure(dt).workouts += 1;
-  }
+  scan(buffer); // flush any trailing complete tag
 
   const rows = Object.values(buckets).map((b) => ({
     date: b.date,
@@ -193,7 +217,9 @@ function parseAppleHealthXML(text) {
     workouts: b.workouts || 0,
   }));
   const sorted = rows.sort((a, b) => a.date.localeCompare(b.date));
-  if (!sorted.length) throw new Error("No recognizable Apple Health records were found.");
+  if (!sorted.length) {
+    throw new Error("No HealthKit records found. If you exported export_cda.xml, upload export.xml from the same export.zip instead - the CDA file uses a different format VisitPulse doesn't read.");
+  }
   return sorted.slice(-30);
 }
 
@@ -523,6 +549,7 @@ export default function VisitPulse() {
   const [chartKey, setChartKey] = useState("resting_hr");
   const [visitContext, setVisitContext] = useState({ clinicianType: "general", chiefComplaint: "general", note: "" });
   const [feedback, setFeedback] = useState(null);
+  const [parsing, setParsing] = useState(null); // { progress: 0..1, name } while streaming a large export
 
   const trends = useMemo(() => computeTrends(data), [data]);
   const brief = useMemo(() => (trends.length ? buildContextualBrief(trends, visitContext) : null), [trends, visitContext]);
@@ -547,21 +574,38 @@ export default function VisitPulse() {
     logFeedback({ clinicianType: visitContext.clinicianType, chiefComplaint: visitContext.chiefComplaint, value });
   };
 
-  const onFile = (e, kind) => {
+  const onFile = async (e, kind) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
+    const name = file.name.toLowerCase();
+    const isXml = kind === "xml" || name.endsWith(".xml");
+
+    // Apple Health export.xml: streamed in chunks so huge files (hundreds of MB) work.
+    if (isXml) {
+      if (name.includes("cda")) {
+        setError("That looks like export_cda.xml (Clinical Document format). Upload export.xml from the same export.zip instead - it holds the HealthKit records VisitPulse reads.");
+        return;
+      }
+      setError(null);
+      setParsing({ progress: 0, name: file.name });
+      try {
+        const rows = await parseAppleHealthXML(file, (p) => setParsing((s) => (s ? { ...s, progress: p } : s)));
+        if (!rows.length) throw new Error("Could not find any dated records in that file.");
+        setData(rows); setSource(file.name + " | " + rows.length + " days"); setError(null); setScreen(1);
+      } catch (err) {
+        setError((err && err.message) || "Could not parse that file. Try the sample data, CSV, or JSON.");
+      } finally {
+        setParsing(null);
+      }
+      return;
+    }
+
+    // CSV / JSON: small files, read directly.
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        let rows;
-        if (kind === "xml") {
-          if (file.size > 60 * 1024 * 1024) throw new Error("That export is very large for in-browser parsing. Use the sample data or a CSV for the demo.");
-          rows = parseAppleHealthXML(reader.result);
-        } else if (file.name.endsWith(".json") || kind === "json") {
-          rows = parseJSON(reader.result);
-        } else {
-          rows = parseCSV(reader.result);
-        }
+        const rows = name.endsWith(".json") || kind === "json" ? parseJSON(reader.result) : parseCSV(reader.result);
         if (!rows.length) throw new Error("Could not find any dated records in that file.");
         setData(rows); setSource(file.name + " | " + rows.length + " days"); setError(null); setScreen(1);
       } catch (err) {
@@ -570,7 +614,6 @@ export default function VisitPulse() {
     };
     reader.onerror = () => setError("Could not read that file.");
     reader.readAsText(file);
-    e.target.value = "";
   };
 
   const copy = async (text, id) => {
@@ -623,6 +666,19 @@ export default function VisitPulse() {
           </div>
         )}
 
+        {parsing && (
+          <div className="mb-5 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium">Parsing {parsing.name || "Apple Health export"}…</span>
+              <span className="tabular-nums">{Math.round(parsing.progress * 100)}%</span>
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
+              <div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${Math.round(parsing.progress * 100)}%` }} />
+            </div>
+            <div className="mt-1 text-xs text-teal-700/80">Large exports can take a minute. Everything stays on your device - nothing is uploaded.</div>
+          </div>
+        )}
+
         {/* Screen 0: Upload */}
         {screen === 0 && (
           <div>
@@ -634,7 +690,7 @@ export default function VisitPulse() {
                 <input type="file" accept=".xml" className="hidden" onChange={(e) => onFile(e, "xml")} />
                 <FileCode className="mb-3 text-teal-600" size={26} />
                 <div className="font-medium">Apple Health export.xml</div>
-                <div className="mt-1 text-sm text-slate-500">Upload the export.xml from your Health export.zip. Best-effort parse.</div>
+                <div className="mt-1 text-sm text-slate-500">Upload <span className="font-medium text-slate-600">export.xml</span> (not export_cda.xml) from your Health export.zip. Streamed in-browser - large multi-hundred-MB exports are fine.</div>
               </label>
               <label className="group cursor-pointer rounded-2xl border-2 border-dashed border-slate-200 bg-white p-5 transition hover:border-teal-300 hover:bg-teal-50/40">
                 <input type="file" accept=".csv,.json" className="hidden" onChange={(e) => onFile(e, "auto")} />
