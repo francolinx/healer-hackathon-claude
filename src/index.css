@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Off-screen container that holds the print-only brief layout. It must stay
+   rendered (not display:none) so react-to-print can clone it, but it should
+   never be visible on screen. */
+.visitpulse-print {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  width: 794px; /* ~A4 width at 96dpi */
+}
+
+/* When react-to-print renders the printable brief into its own document, give
+   it sensible page margins and let it size to the page. */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+}
