@@ -38,3 +38,11 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
 - Smoke test: best window 2025-03-26..04-29 (score 95.5, 14mo ago) vs current
   45.8 -> 48% back; gaps correct; no spurious confounds.
 - Build result: PASS.
+
+**2026-06-14 07:18 UTC — Tests: deterministic engine**
+- Added vitest (dev dep) + `npm test`/`npm run test:watch`.
+- tests/healthEngine.test.js: 14 tests covering sub-score clamping, completeness
+  weighting + missing data, window characterization, best-window detection,
+  % back + gaps, realistic-target/OLD_PEAK path, gap/missing robustness,
+  LOW_CURRENT_COVERAGE, and the synthetic fixture (~14mo best, real gap).
+- Result: 14/14 PASS. Build: PASS (engine still pure module).
