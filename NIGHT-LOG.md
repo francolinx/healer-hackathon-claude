@@ -46,3 +46,13 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   % back + gaps, realistic-target/OLD_PEAK path, gap/missing robustness,
   LOW_CURRENT_COVERAGE, and the synthetic fixture (~14mo best, real gap).
 - Result: 14/14 PASS. Build: PASS (engine still pure module).
+
+**2026-06-14 07:21 UTC — Phase 4: communication layer (template) + scaffold**
+- Added src/coach.js: generateCoachMessage(facts, options) template impl with a
+  documented LLM strategy seam + grounding contract; buildCoachParts (UI),
+  weeklySummary, clock formatting. No LLM/network. Disclaimer verbatim.
+- tests/coach.test.js: 11 tests incl a grounding check (every multi-digit number
+  in the message traces to a fact), determinism, celebrate-at-best, LLM-seam
+  throws. Suite now 25/25 PASS.
+- Wrote INTEGRATION-PLAN.md (future messaging/LLM + privacy decisions gate).
+- Build result: PASS.
