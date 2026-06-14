@@ -147,6 +147,18 @@ describe("computeHistoricalBest", () => {
     expect(() => computeHistoricalBest(rows)).not.toThrow();
   });
 
+  it("flags SEASONAL when best and now fall in opposite seasons", () => {
+    // End in winter (mid-Jan); plant the best block ~6 months earlier (summer).
+    const rows = buildRows(260, "2026-01-15", (i) => {
+      if (i <= 40) return poor;
+      if (i >= 170 && i <= 210) return great; // ~July 2025
+      return baseline(i);
+    });
+    const f = computeHistoricalBest(rows);
+    expect(f.ok).toBe(true);
+    expect(f.confounds.map((c) => c.code)).toContain("SEASONAL");
+  });
+
   it("flags LOW_CURRENT_COVERAGE when recent data is sparse", () => {
     const rows = buildRows(220, "2026-06-13", (i) => {
       if (i <= 40 && i % 4 !== 0) return {}; // most recent days empty
