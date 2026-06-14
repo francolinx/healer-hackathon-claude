@@ -75,3 +75,9 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
 - Build PASS; tests 25/25 PASS.
 - Deploy: NOT possible from this sandbox (no Vercel CLI/token). Repo is
   deploy-ready; documented the import + QR steps for the user in MORNING-BRIEF.md.
+
+**2026-06-14 07:31 UTC — Polish: coach chart shading + cleanup**
+- Snap best/current ReferenceArea bounds to real chart categories so the
+  best-window and recent-window shading always render (gap days could otherwise
+  miss the categorical X axis). Removed an unused import.
+- Build PASS; tests 25/25 PASS.

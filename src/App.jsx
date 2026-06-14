@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { logFeedback } from "./feedback.js";
 import { computeHistoricalBest, computeDailyScores } from "./healthEngine.js";
-import { buildCoachParts, generateCoachMessage, weeklySummary, bedtimeClock, wakeClock } from "./coach.js";
+import { buildCoachParts, generateCoachMessage, weeklySummary, bedtimeClock } from "./coach.js";
 import sampleHistoryCsv from "../samples/sample_garmin_history.csv?raw";
 
 /* ------------------------------------------------------------------ */
@@ -632,6 +632,14 @@ function CoachView({ facts, dailyScores, weekly, coachParts, copyText, copy, cop
   const c = facts.current;
   const scoreData = dailyScores.map((d) => ({ date: d.date, score: d.score === null ? null : Math.round(d.score) }));
   const tickEvery = Math.max(1, Math.floor(scoreData.length / 6));
+  // The chart's X axis is categorical (present dates only). Best/current window
+  // bounds come from the calendar timeline and may land on a gap day, so snap
+  // them to real categories or the ReferenceArea shading won't render.
+  const dates = scoreData.map((d) => d.date);
+  const snapLo = (d) => dates.find((x) => x >= d) || dates[0];
+  const snapHi = (d) => { for (let i = dates.length - 1; i >= 0; i--) if (dates[i] <= d) return dates[i]; return dates[dates.length - 1]; };
+  const bestX1 = snapLo(b.startDate), bestX2 = snapHi(b.endDate);
+  const curX1 = snapLo(c.startDate), curX2 = snapHi(c.endDate);
 
   return (
     <div>
@@ -693,8 +701,8 @@ function CoachView({ facts, dailyScores, weekly, coachParts, copyText, copy, cop
                   <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#94a3b8" }} tickFormatter={(d) => d.slice(2, 7)} interval={tickEvery} />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#94a3b8" }} width={32} />
                   <Tooltip contentStyle={{ fontSize: 12, borderRadius: 10, border: "1px solid #e2e8f0" }} />
-                  <ReferenceArea x1={b.startDate} x2={b.endDate} fill="#10b981" fillOpacity={0.14} />
-                  <ReferenceArea x1={c.startDate} x2={c.endDate} fill="#f59e0b" fillOpacity={0.1} />
+                  <ReferenceArea x1={bestX1} x2={bestX2} fill="#10b981" fillOpacity={0.14} />
+                  <ReferenceArea x1={curX1} x2={curX2} fill="#f59e0b" fillOpacity={0.1} />
                   <Line type="monotone" dataKey="score" stroke="#0d9488" strokeWidth={1.75} dot={false} isAnimationActive={false} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
