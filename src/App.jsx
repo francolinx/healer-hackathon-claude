@@ -8,9 +8,12 @@ import {
   Activity, HeartPulse, Moon, Footprints, Dumbbell, Flame, Wind, FileText, Send,
   Copy, Check, AlertTriangle, TrendingUp, TrendingDown, Minus, ShieldCheck, ChevronRight,
   ChevronLeft, Database, FileSpreadsheet, FileCode, CheckCircle2, Stethoscope, ClipboardList, ThumbsUp,
-  Download, Calculator, Unlock, Clock,
+  Download, Calculator, Unlock, Clock, Trophy, Target, CalendarDays, Sparkles, History,
 } from "lucide-react";
 import { logFeedback } from "./feedback.js";
+import { computeHistoricalBest, computeDailyScores } from "./healthEngine.js";
+import { buildCoachParts, generateCoachMessage, weeklySummary, bedtimeClock, wakeClock } from "./coach.js";
+import sampleHistoryCsv from "../samples/sample_garmin_history.csv?raw";
 
 /* ------------------------------------------------------------------ */
 /* Config                                                              */
@@ -584,11 +587,205 @@ const PrintableBrief = forwardRef(function PrintableBrief({ brief }, ref) {
 });
 
 /* ------------------------------------------------------------------ */
+/* Coach experience (Historical-Best benchmarking)                     */
+/* All numbers come from the deterministic healthEngine facts object.  */
+/* ------------------------------------------------------------------ */
+function fmtGapVal(key, v, decimals) {
+  if (v === null || v === undefined) return "-";
+  if (key === "bedtime_min") return bedtimeClock(v) || "-";
+  if (key === "steps") return Math.round(v).toLocaleString("en-US");
+  return String(Math.round(v * 10 ** decimals) / 10 ** decimals);
+}
+
+function GapRow({ g }) {
+  const tone = g.towardBest ? "text-emerald-600" : "text-amber-600";
+  const Arrow = g.towardBest ? CheckCircle2 : (g.better === "higher" ? TrendingDown : TrendingUp);
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-2.5 last:border-0">
+      <div className="min-w-0 text-sm font-medium text-slate-700">{g.label}</div>
+      <div className="flex items-center gap-3 text-sm tabular-nums">
+        <span className="text-slate-400">{fmtGapVal(g.key, g.best, g.decimals)}{g.unit ? " " + g.unit : ""}</span>
+        <ChevronRight size={13} className="text-slate-300" />
+        <span className="font-semibold text-slate-700">{fmtGapVal(g.key, g.current, g.decimals)}{g.unit ? " " + g.unit : ""}</span>
+        <span className={`inline-flex w-16 shrink-0 items-center justify-end gap-1 ${tone}`}>
+          <Arrow size={13} />{g.towardBest ? "on track" : (g.pctChange === null ? "" : (g.pctChange > 0 ? "+" : "") + g.pctChange.toFixed(0) + "%")}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function CoachView({ facts, dailyScores, weekly, coachParts, copyText, copy, copied }) {
+  const [tab, setTab] = useState("best");
+  if (!facts) return null;
+  if (!facts.ok) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+        <History className="mx-auto text-slate-300" size={34} />
+        <h2 className="mt-3 text-lg font-semibold text-slate-700">Not enough history yet</h2>
+        <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">{facts.reason}</p>
+        <p className="mx-auto mt-3 max-w-md text-xs text-slate-400">Tip: load the 2-year sample history to see the full Historical-Best experience.</p>
+      </div>
+    );
+  }
+  const b = facts.best;
+  const c = facts.current;
+  const scoreData = dailyScores.map((d) => ({ date: d.date, score: d.score === null ? null : Math.round(d.score) }));
+  const tickEvery = Math.max(1, Math.floor(scoreData.length / 6));
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Your health, benchmarked against your best</h1>
+          <p className="mt-1 text-slate-500">We find the strongest version of you that already existed in your data - and show you the receipts.</p>
+        </div>
+        <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
+          {[["best", "Your Best Self", Trophy], ["week", "This Week", CalendarDays]].map(([k, lbl, Icon]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition ${tab === k ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+              <Icon size={15} />{lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "best" && (
+        <div className="mt-5 space-y-5">
+          {/* Headline: % back to your best */}
+          <div className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-6">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-teal-700">
+                  {facts.atOrAboveBest ? <Sparkles size={14} /> : <Target size={14} />}{coachParts.headline}
+                </div>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-5xl font-semibold tracking-tight text-teal-700">{facts.percentBack}%</span>
+                  <span className="text-sm text-slate-500">back to your best</span>
+                </div>
+                <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-600">{coachParts.body}</p>
+              </div>
+              <div className="flex gap-2 text-center">
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-2">
+                  <div className="text-xl font-semibold text-teal-700">{b.score}</div><div className="text-xs text-slate-400">best score</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-2">
+                  <div className="text-xl font-semibold text-slate-700">{c.score}</div><div className="text-xs text-slate-400">now</div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-teal-100">
+              <div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${facts.percentBack}%` }} />
+            </div>
+            {coachParts.caveat && <p className="mt-2 text-xs text-amber-600">{coachParts.caveat}</p>}
+          </div>
+
+          {/* Best window + score timeline */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Trophy size={16} className="text-amber-500" /> Your best window</div>
+              <div className="text-sm text-slate-500">{b.startDate} to {b.endDate} · ~{b.monthsAgo} month{b.monthsAgo === 1 ? "" : "s"} ago · {Math.round(b.coverage * 100)}% covered</div>
+            </div>
+            <div className="mt-3 h-56 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={scoreData} margin={{ top: 8, right: 16, left: -16, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#94a3b8" }} tickFormatter={(d) => d.slice(2, 7)} interval={tickEvery} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#94a3b8" }} width={32} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 10, border: "1px solid #e2e8f0" }} />
+                  <ReferenceArea x1={b.startDate} x2={b.endDate} fill="#10b981" fillOpacity={0.14} />
+                  <ReferenceArea x1={c.startDate} x2={c.endDate} fill="#f59e0b" fillOpacity={0.1} />
+                  <Line type="monotone" dataKey="score" stroke="#0d9488" strokeWidth={1.75} dot={false} isAnimationActive={false} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-4 text-xs text-slate-400">
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-3 rounded bg-emerald-400/60" /> best window</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-3 rounded bg-amber-400/50" /> last {facts.config.CURRENT_DAYS} days</span>
+              <span>Daily wellness score (0-100), composite of available signals.</span>
+            </div>
+          </div>
+
+          {/* Then vs now */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="mb-1 flex items-center gap-2 text-sm font-medium text-slate-700"><Activity size={16} className="text-teal-600" /> What you were doing then vs now</div>
+            <div className="grid grid-cols-[1fr_auto] items-center pb-1 text-xs uppercase tracking-wide text-slate-400">
+              <span>Signal</span><span className="pr-[4.5rem]">best&nbsp;&rarr;&nbsp;now</span>
+            </div>
+            {facts.gaps.map((g) => <GapRow key={g.key} g={g} />)}
+          </div>
+
+          {/* Target + confounds */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Target size={16} className="text-teal-600" /> {facts.target.label}</div>
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">{facts.target.note}</p>
+            {facts.confounds.length > 0 && (
+              <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                {facts.confounds.map((cf) => (
+                  <li key={cf.code} className="flex gap-2 text-xs text-slate-500"><AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-400" />{cf.label}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="flex items-start gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+            <ShieldCheck size={16} className="mt-0.5 shrink-0" />
+            <span>{coachParts.disclaimer} VisitPulse coaches toward wellness habits you have already sustained - it does not diagnose, triage, or make medical claims.</span>
+          </div>
+        </div>
+      )}
+
+      {tab === "week" && (
+        <div className="mt-5 space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: "Sleep", icon: Moon, val: weekly && weekly.sleep != null ? weekly.sleep + " h" : "-", sub: weekly && weekly.vsBest && weekly.vsBest.sleep != null ? `${weekly.vsBest.sleep > 0 ? "+" : ""}${weekly.vsBest.sleep} h vs best` : "" },
+              { label: "Bedtime", icon: Clock, val: weekly && weekly.bedtimeClock ? weekly.bedtimeClock : "-", sub: weekly && weekly.consistency ? weekly.consistency : "" },
+              { label: "Steps / day", icon: Footprints, val: weekly && weekly.steps != null ? Math.round(weekly.steps).toLocaleString("en-US") : "-", sub: weekly && weekly.vsBest && weekly.vsBest.steps != null ? `${weekly.vsBest.steps > 0 ? "+" : ""}${Math.round(weekly.vsBest.steps).toLocaleString("en-US")} vs best` : "" },
+              { label: "Workouts", icon: Dumbbell, val: weekly ? String(weekly.workouts) : "-", sub: "this week" },
+            ].map((card) => (
+              <div key={card.label} className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-400"><card.icon size={14} className="text-teal-600" />{card.label}</div>
+                <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-800">{card.val}</div>
+                <div className="mt-0.5 text-xs text-slate-400">{card.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+              <div className="flex items-center gap-2 font-medium text-slate-700"><Sparkles size={16} className="text-teal-600" /> Your nudge this week</div>
+              <CopyBtn id="coach" copied={copied} onCopy={copy} text={copyText} />
+            </div>
+            <div className="space-y-3 p-5">
+              <div className="text-base font-semibold text-slate-800">{coachParts.headline}</div>
+              <p className="text-sm leading-relaxed text-slate-600">{coachParts.body}</p>
+              {coachParts.nudge && (
+                <div className="flex items-start gap-2 rounded-xl border border-teal-100 bg-teal-50/60 px-4 py-3 text-sm text-teal-900">
+                  <Target size={16} className="mt-0.5 shrink-0 text-teal-600" /><span>{coachParts.nudge}</span>
+                </div>
+              )}
+              {coachParts.caveat && <p className="text-xs text-amber-600">{coachParts.caveat}</p>}
+              <p className="border-t border-slate-100 pt-3 text-xs text-slate-400">{coachParts.disclaimer}</p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs text-slate-500">
+            <span className="font-medium text-slate-700">Template-generated, not AI:</span> this message is assembled from the deterministic facts above by fixed rules. The communication layer is built so a grounded LLM can phrase it later - but it would only ever rephrase these same numbers, never invent new ones.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Main component                                                      */
 /* ------------------------------------------------------------------ */
 const STEPS = ["Upload", "Data preview", "Trend analysis", "Visit context", "Clinician brief", "Send to clinician"];
 
 export default function VisitPulse() {
+  const [experience, setExperience] = useState("clinical"); // "clinical" (pre-visit brief) | "coach" (historical-best)
   const [screen, setScreen] = useState(0);
   const [data, setData] = useState(null);
   const [source, setSource] = useState("");
@@ -607,6 +804,13 @@ export default function VisitPulse() {
   const portalMsg = useMemo(() => (brief ? buildPortalMessage(brief) : ""), [brief]);
   const fhir = useMemo(() => (trends.length ? buildFHIR(trends) : ""), [trends]);
 
+  // Coach experience facts (deterministic; full history). See healthEngine.js.
+  const facts = useMemo(() => (data ? computeHistoricalBest(data) : null), [data]);
+  const dailyScores = useMemo(() => (data ? computeDailyScores(data) : []), [data]);
+  const coachParts = useMemo(() => (facts ? buildCoachParts(facts) : null), [facts]);
+  const coachText = useMemo(() => (facts ? generateCoachMessage(facts) : ""), [facts]);
+  const weekly = useMemo(() => (data && facts && facts.ok ? weeklySummary(data, facts.best.profile) : null), [data, facts]);
+
   // Download PDF: client-side print of the brief for the CURRENT lens. No API/keys.
   const printRef = useRef(null);
   const handleDownloadPdf = useReactToPrint({
@@ -615,6 +819,15 @@ export default function VisitPulse() {
   });
 
   const loadSample = () => { setData(buildSampleData()); setSource("Sample Garmin Fenix data | 30 days"); setError(null); setScreen(1); };
+  // Coach demo: a deterministic SYNTHETIC 2-year history bundled at build time.
+  const loadSampleHistory = () => {
+    try {
+      const rows = parseCSV(sampleHistoryCsv);
+      if (!rows.length) throw new Error("empty");
+      setData(rows); setSource("Synthetic 2-year Garmin history (demo) | " + rows.length + " days");
+      setError(null); setExperience("coach"); setScreen(1);
+    } catch (_) { loadSample(); }
+  };
 
   const setCtx = (patch) => { setVisitContext((c) => ({ ...c, ...patch })); setFeedback(null); };
 
@@ -694,21 +907,39 @@ export default function VisitPulse() {
         </div>
       </header>
 
+      {/* Experience toggle: Health Coach (historical-best) vs Pre-Visit Brief (clinical). Both fully work. */}
       <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-5 py-2.5">
-          {STEPS.map((s, i) => {
-            const reachable = i === 0 || data;
-            const active = i === screen;
-            return (
-              <button key={s} disabled={!reachable} onClick={() => reachable && setScreen(i)}
-                className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition ${active ? "bg-teal-50 font-medium text-teal-700" : reachable ? "text-slate-500 hover:bg-slate-50" : "cursor-not-allowed text-slate-300"}`}>
-                <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs ${active ? "bg-teal-600 text-white" : reachable ? "bg-slate-200 text-slate-600" : "bg-slate-100 text-slate-300"}`}>{i + 1}</span>
-                {s}
+        <div className="mx-auto flex max-w-5xl items-center gap-2.5 px-5 py-2.5">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Mode</span>
+          <div className="flex rounded-lg border border-slate-200 p-0.5 text-sm">
+            {[["coach", "Health Coach", Trophy], ["clinical", "Pre-Visit Brief", Stethoscope]].map(([k, lbl, Icon]) => (
+              <button key={k} onClick={() => setExperience(k)}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition ${experience === k ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                <Icon size={15} />{lbl}
               </button>
-            );
-          })}
+            ))}
+          </div>
+          <span className="hidden text-xs text-slate-400 sm:inline">{experience === "coach" ? "Find your best self in your own history." : "A one-page brief for your clinician."}</span>
         </div>
       </div>
+
+      {experience === "clinical" && (
+        <div className="border-b border-slate-200 bg-white">
+          <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-5 py-2.5">
+            {STEPS.map((s, i) => {
+              const reachable = i === 0 || data;
+              const active = i === screen;
+              return (
+                <button key={s} disabled={!reachable} onClick={() => reachable && setScreen(i)}
+                  className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition ${active ? "bg-teal-50 font-medium text-teal-700" : reachable ? "text-slate-500 hover:bg-slate-50" : "cursor-not-allowed text-slate-300"}`}>
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs ${active ? "bg-teal-600 text-white" : reachable ? "bg-slate-200 text-slate-600" : "bg-slate-100 text-slate-300"}`}>{i + 1}</span>
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto max-w-5xl px-5 py-7">
         {error && (
@@ -774,7 +1005,7 @@ export default function VisitPulse() {
             <h2 className="mt-9 text-2xl font-semibold tracking-tight">Share your wearable data for an upcoming visit</h2>
             <p className="mt-2 max-w-2xl text-slate-500">This is a <span className="font-medium text-slate-700">patient-approved Apple Health export</span> flow. Your phone exports your own data (Settings &gt; Health &gt; Export), and you choose to share a summary with your clinician. Nothing is pulled from your record, and no data leaves this device in the demo.</p>
 
-            <div className="mt-7 grid gap-4 sm:grid-cols-3">
+            <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <label className="group cursor-pointer rounded-2xl border-2 border-dashed border-slate-200 bg-white p-5 transition hover:border-teal-300 hover:bg-teal-50/40">
                 <input type="file" accept=".xml" className="hidden" onChange={(e) => onFile(e, "xml")} />
                 <FileCode className="mb-3 text-teal-600" size={26} />
@@ -790,7 +1021,12 @@ export default function VisitPulse() {
               <button onClick={loadSample} className="rounded-2xl border-2 border-teal-200 bg-teal-50 p-5 text-left transition hover:bg-teal-100/70">
                 <Database className="mb-3 text-teal-700" size={26} />
                 <div className="font-medium text-teal-800">Use sample Garmin data</div>
-                <div className="mt-1 text-sm text-teal-700/80">30 days from a Garmin Fenix. Runs the full demo instantly.</div>
+                <div className="mt-1 text-sm text-teal-700/80">30 days from a Garmin Fenix. Runs the clinical brief demo instantly.</div>
+              </button>
+              <button onClick={loadSampleHistory} className="rounded-2xl border-2 border-teal-300 bg-teal-50 p-5 text-left transition hover:bg-teal-100/70">
+                <History className="mb-3 text-teal-700" size={26} />
+                <div className="font-medium text-teal-800">Use sample 2-year history</div>
+                <div className="mt-1 text-sm text-teal-700/80">Opens the <span className="font-medium">Health Coach</span>: finds your best window and how far back you are. Synthetic demo data.</div>
               </button>
             </div>
 
@@ -801,7 +1037,7 @@ export default function VisitPulse() {
         )}
 
         {/* Screen 1: Data preview */}
-        {screen === 1 && data && (
+        {experience === "clinical" && screen === 1 && data && (
           <div>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -840,7 +1076,7 @@ export default function VisitPulse() {
         )}
 
         {/* Screen 2: Trend analysis */}
-        {screen === 2 && data && (
+        {experience === "clinical" && screen === 2 && data && (
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Trend analysis</h1>
             <p className="mt-1 text-slate-500">Last 7 days vs the previous 21. <span className="font-medium text-amber-600">{flaggedCount} signal{flaggedCount === 1 ? "" : "s"} flagged.</span> Shaded band = recent window.</p>
@@ -899,7 +1135,7 @@ export default function VisitPulse() {
         )}
 
         {/* Screen 3: Visit context */}
-        {screen === 3 && data && (
+        {experience === "clinical" && screen === 3 && data && (
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Visit context</h1>
             <p className="mt-1 max-w-2xl text-slate-500">Tell us who you're seeing and why. The brief reorders to lead with the signals most relevant to this visit and suggests questions to ask. This selects relevance and questions only - it never interprets or diagnoses.</p>
@@ -935,7 +1171,7 @@ export default function VisitPulse() {
         )}
 
         {/* Screen 4: Clinician brief (contextual) */}
-        {screen === 4 && brief && (
+        {experience === "clinical" && screen === 4 && brief && (
           <div>
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-semibold tracking-tight">Clinician brief</h1>
@@ -1022,7 +1258,7 @@ export default function VisitPulse() {
         )}
 
         {/* Screen 5: Send */}
-        {screen === 5 && brief && (
+        {experience === "clinical" && screen === 5 && brief && (
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Send to clinician</h1>
             <p className="mt-1 text-slate-500">Paste into a patient-portal message, or hand over the brief. EHR-ready export is shown as a future integration.</p>
@@ -1061,6 +1297,11 @@ export default function VisitPulse() {
             </div>
             <NavRow onBack={() => setScreen(4)} backLabel="Brief" onNext={() => { setData(null); setScreen(0); setError(null); setVisitContext({ clinicianType: "general", chiefComplaint: "general", note: "" }); setFeedback(null); }} nextLabel="Start over" />
           </div>
+        )}
+
+        {/* Coach experience: Historical-Best benchmarking */}
+        {experience === "coach" && data && (
+          <CoachView facts={facts} dailyScores={dailyScores} weekly={weekly} coachParts={coachParts} copyText={coachText} copy={copy} copied={copied} />
         )}
       </main>
 

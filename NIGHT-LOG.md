@@ -56,3 +56,14 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   throws. Suite now 25/25 PASS.
 - Wrote INTEGRATION-PLAN.md (future messaging/LLM + privacy decisions gate).
 - Build result: PASS.
+
+**2026-06-14 07:26 UTC — Phase 3: Coach UI (additive)**
+- Added a top-level experience toggle (Health Coach | Pre-Visit Brief). Clinical
+  flow gated behind experience==="clinical"; unchanged behaviourally.
+- Added CoachView: "Your Best Self" (% back headline + progress, best-window
+  score timeline with best/current shading, then-vs-now gap rows, peak/realistic
+  target, confound caveats, disclaimer) and "This Week" (weekly cards + template
+  coach-message preview with Copy + disclaimer + "template, not AI" note).
+- Added "Use sample 2-year history" loader (bundles samples/sample_garmin_history.csv
+  via Vite ?raw) that opens the coach. 30-day sample still drives the clinical demo.
+- Build PASS; tests 25/25 PASS; preview serves 200; history CSV confirmed bundled.
