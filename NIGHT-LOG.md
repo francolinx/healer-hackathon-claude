@@ -67,3 +67,11 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
 - Added "Use sample 2-year history" loader (bundles samples/sample_garmin_history.csv
   via Vite ?raw) that opens the coach. 30-day sample still drives the clinical demo.
 - Build PASS; tests 25/25 PASS; preview serves 200; history CSV confirmed bundled.
+
+**2026-06-14 07:29 UTC — Phase 5: docs + housekeeping**
+- Updated CLAUDE.md (two experiences, FACTS/COMMUNICATION principle, code map,
+  coach guardrails + privacy gate), README.md (Health Coach section + structure),
+  TASKS.md (pivot status + awake-decisions). Wrote MORNING-BRIEF.md.
+- Build PASS; tests 25/25 PASS.
+- Deploy: NOT possible from this sandbox (no Vercel CLI/token). Repo is
+  deploy-ready; documented the import + QR steps for the user in MORNING-BRIEF.md.

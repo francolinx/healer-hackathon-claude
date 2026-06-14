@@ -38,6 +38,29 @@ The sample data has a planted clinical arc (resting HR up, sleep/steps/exercise 
 
 ---
 
+## Health Coach (Historical-Best benchmarking)
+
+VisitPulse also has a second experience — toggle **Health Coach** at the top. It scans the user's
+**entire** history, finds the window when they were genuinely at their best, characterizes what they
+were doing then, and shows **"% back to your best."** *"We find the best version of you that already
+existed in your data, and show you the receipts."*
+
+Demo: on the Upload screen click **Use sample 2-year history** (synthetic). You'll see:
+- **Your Best Self** — the headline *% back to your best*, the best 5-week window on a daily-score
+  timeline (best window + last 30 days shaded), a **then-vs-now** gap per signal, a peak-vs-realistic
+  **target**, and confound caveats (seasonality, sparse recent data, old peak).
+- **This Week** — last-7-day pattern (sleep, bedtime + consistency, steps, workouts) and a **template
+  coach nudge** you can copy.
+
+Architecture — **FACTS vs COMMUNICATION** (see `SCORING.md`, `INTEGRATION-PLAN.md`):
+- **Facts** are deterministic and **LLM-free** (`src/healthEngine.js`): completeness-weighted daily
+  score, best-window selection, behavioral profile, gap, "% back", realistic-goal guardrails.
+- **Communication** (`src/coach.js`) is **template-based** today, with a documented seam so a future
+  grounded LLM can phrase nudges — it may only ever rephrase the facts, never invent them. No LLM or
+  network call runs in this build; coaching stays wellness-framed and carries the disclaimer.
+
+---
+
 ## Upload formats
 
 **CSV / JSON** is the most reliable upload path. One row per day, normalized to:
@@ -87,9 +110,19 @@ visitpulse/
   src/
     main.jsx          # React entry (imports index.css)
     index.css         # @tailwind directives + print styles
-    App.jsx           # the VisitPulse app (6 screens, parsers, trend engine, brief, PDF)
+    App.jsx           # UI for both experiences (clinical brief + health coach), parsers
+    healthEngine.js   # FACTS layer: deterministic Historical-Best engine (LLM-free)
+    coach.js          # COMMUNICATION layer: template coach messages (+ LLM seam)
     feedback.js       # optional Supabase feedback logger (no-op when unconfigured)
+  samples/
+    sample_garmin.csv          # 30-day clinical demo fixture
+    sample_garmin_history.csv  # SYNTHETIC 2-year coach fixture
+  tests/              # vitest unit tests for the engine + coach; fixtures/genHistory.mjs
+  SCORING.md          # how the engine computes its facts
+  INTEGRATION-PLAN.md # future messaging/LLM design + privacy gate
 ```
+
+Run the tests with `npm test` (vitest).
 
 ---
 

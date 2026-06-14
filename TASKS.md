@@ -35,3 +35,23 @@ after each task to confirm it compiles.
 ## Test fixture
 - `samples/sample_garmin.csv` is a synthetic 30-day file (NOT real patient data). Use it to test
   the CSV upload path and to reproduce the sample-data demo via upload.
+- `samples/sample_garmin_history.csv` is a synthetic ~2-year file for the Health Coach
+  (generator: `tests/fixtures/genHistory.mjs`). Used by the coach demo loader and the unit tests.
+
+## Strategic pivot — Health Coach (Historical-Best benchmarking)  [overnight build]
+Status: DONE and build/test-verified. See NIGHT-LOG.md, DECISIONS.md, SCORING.md,
+INTEGRATION-PLAN.md, MORNING-BRIEF.md.
+- [x] Sleep-parsing fix (asleep-only, merge overlaps, attribute to wake date) + parse full history.
+- [x] Deterministic Historical-Best engine (`src/healthEngine.js`) + `SCORING.md`.
+- [x] Realistic-goal guardrails (recency-aware target, confound flags).
+- [x] Coach UI: experience toggle, "Your Best Self", "This Week", template nudge. Clinical flow intact.
+- [x] Communication-layer adapter (`src/coach.js`) template impl + LLM seam; `INTEGRATION-PLAN.md`.
+- [x] Unit tests (vitest) for the engine + coach (`npm test`, 25 passing).
+
+### Waiting on the user (decisions I could not make)
+- **Privacy posture (Phase 4 gate, the big one):** what — if anything — may leave the device for a
+  future weekly LLM nudge backend (on-device vs server, consent, encryption, key management).
+  Until decided, NO messaging/LLM/network is wired and "no health data leaves the device" stays true.
+- Default experience is `clinical` (preserves the existing demo). Flip the `useState("clinical")`
+  default in `src/App.jsx` to `"coach"` if you want the coach to lead.
+- Deploy to Vercel + QR (carried over): see DEPLOY.md / MORNING-BRIEF.md.

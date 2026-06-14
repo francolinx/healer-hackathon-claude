@@ -19,19 +19,33 @@ something a clinician can read in 30 seconds. Built for the Hackers and Healers 
 - `npm install`
 - `npm run dev`    # local dev server
 - `npm run build`  # production build into dist/
+- `npm test`       # vitest unit tests for the deterministic engine
 
-## Architecture (all in src/App.jsx)
-- 6-screen flow: Upload -> Data preview -> Trend analysis -> Visit context -> Clinician brief -> Send.
-- Parsers: Apple Health `export.xml` (DOMParser, best-effort), CSV (papaparse), JSON, plus
-  deterministic built-in sample data.
-- Trend engine (`computeTrends`): last 7 days vs the prior 21, per-signal flags + signal strength
-  + data completeness.
-- Contextual brief: `CLINICIAN_PROFILES` (specialty -> signal priority + framing) and
-  `CHIEF_COMPLAINTS` (complaint -> relevant signals + non-diagnostic "why" line + emphasized
-  question) drive `buildContextualBrief()`, which reorders the brief to lead with relevant
-  signals and surfaces complaint-specific questions.
-- A live lens-switcher on the brief screen re-runs the recompose; feedback buttons capture a
-  usefulness signal (the flywheel).
+## Two experiences (top-level mode toggle; BOTH must always work)
+1. **Pre-Visit Brief** (clinical, "act two") — the original 6-screen flow.
+2. **Health Coach** (the hero) — Historical-Best benchmarking: find the user's
+   best sustained window, characterize it, and show "% back to your best".
+
+## Architecture: FACTS vs COMMUNICATION (the governing principle)
+- **FACTS** = deterministic, auditable, LLM-free. `src/healthEngine.js`
+  (composite daily score, best-window selection, profile, gap, "% back",
+  realistic-goal guardrails — see SCORING.md) and the clinical trend/brief code.
+- **COMMUNICATION** = `src/coach.js` `generateCoachMessage(facts, options)`,
+  TEMPLATE-based today with a documented LLM seam. AI may only ever *rephrase*
+  facts, never invent them (grounding contract in coach.js / INTEGRATION-PLAN.md).
+  No LLM/network call at runtime.
+
+## Code map
+- `src/App.jsx` — UI for both experiences; `data` = FULL history, `recentData` =
+  last 30 days (clinical). Parsers (CSV/JSON/streaming Apple Health XML with the
+  asleep-only/merge/wake-date sleep fix). `CoachView` renders the engine facts.
+- `src/healthEngine.js` — the FACTS engine (pure, tested in tests/).
+- `src/coach.js` — the COMMUNICATION layer (template; LLM seam).
+- `src/feedback.js` — optional Supabase flywheel (gated by env).
+- `samples/sample_garmin_history.csv` — SYNTHETIC 2-year coach fixture
+  (generator: `tests/fixtures/genHistory.mjs`).
+- Clinical: `computeTrends` (7d vs prior 21), `buildContextualBrief`
+  (`CLINICIAN_PROFILES` + `CHIEF_COMPLAINTS`), live lens-switcher, feedback flywheel.
 
 ## Non-negotiables (do NOT drift from these)
 - NOT diagnostic. Never generate a diagnosis, assessment, triage, or treatment recommendation.
@@ -47,6 +61,12 @@ something a clinician can read in 30 seconds. Built for the Hackers and Healers 
 - Required disclaimer, verbatim: "This is patient-generated wearable data and should be
   interpreted as context, not diagnosis."
 - The demo must never break: if a file won't parse, fall back to sample data.
+- Coach guardrails (same spirit): the FACTS engine is deterministic/LLM-free; coach output is
+  wellness framing only (sleep timing, activity, consistency), never a medical claim; robust to
+  missing/partial data (score on what's present, weight by completeness, never crash); the coach
+  carries the verbatim disclaimer; ADDITIVE — never break the clinical brief flow.
+- Privacy claim must stay TRUE: nothing sends health data anywhere. The messaging/LLM backend is
+  a FUTURE task gated on a privacy decision (see INTEGRATION-PLAN.md); do not wire it without that.
 
 ## Positioning (keep language consistent)
 - A pre-visit moment, NOT continuous monitoring. Clinician-in-the-loop.
