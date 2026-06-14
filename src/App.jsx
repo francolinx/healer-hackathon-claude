@@ -16,6 +16,7 @@ import { logFeedback } from "./feedback.js";
 /* Config                                                              */
 /* ------------------------------------------------------------------ */
 const TODAY = "2026-06-13";
+const RECENT_WINDOW_DAYS = 30; // clinical flow operates on the most recent N days
 
 const SIGNALS = [
   { key: "resting_hr", label: "Resting heart rate", unit: "bpm", icon: HeartPulse, concern: "up", decimals: 0,
@@ -113,7 +114,7 @@ function buildSampleData() {
 /* ------------------------------------------------------------------ */
 /* Parsers                                                             */
 /* ------------------------------------------------------------------ */
-const FIELDS = ["resting_hr", "avg_hr", "steps", "exercise_minutes", "active_energy", "spo2", "sleep_hours", "workouts"];
+const FIELDS = ["resting_hr", "avg_hr", "steps", "exercise_minutes", "active_energy", "spo2", "sleep_hours", "workouts", "bedtime_min", "wake_min"];
 const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
 
 function normalizeRows(rows) {
@@ -150,13 +151,22 @@ function parseJSON(text) {
 // Angle brackets inside attribute values are XML-escaped in Apple exports, so
 // every literal '>' is a real tag terminator and we can split on it safely.
 // Bounded memory + a progress callback => multi-hundred-MB files parse fine.
+//
+// Sleep is special (see DECISIONS.md D2): Apple emits overlapping InBed + staged
+// Asleep records, so we collect raw intervals, count only "Asleep*" stages,
+// MERGE overlapping intervals (no double-counting), and attribute each night to
+// its WAKE date. Returns FULL history (D1); clinical screens slice the recent window.
 async function parseAppleHealthXML(file, onProgress) {
   const CHUNK = 8 * 1024 * 1024; // 8 MB slices
   const decoder = new TextDecoder("utf-8");
   const day = (s) => (s ? s.slice(0, 10) : null);
+  const hhmm = (s) => (s && s.length >= 16 ? s.slice(11, 16) : null); // "HH:MM" wall-clock
   const attr = (tag, name) => { const m = tag.match(new RegExp(name + '="([^"]*)"')); return m ? m[1] : null; };
   const buckets = {};
-  const ensure = (dt) => (buckets[dt] = buckets[dt] || { date: dt, _rhr: [], _hr: [], steps: 0, exercise_minutes: 0, active_energy: 0, _spo2: [], _sleep: 0, workouts: 0 });
+  const ensure = (dt) => (buckets[dt] = buckets[dt] || { date: dt, _rhr: [], _hr: [], steps: 0, exercise_minutes: 0, active_energy: 0, _spo2: [], workouts: 0, sleep_hours: null, bedtime_min: null, wake_min: null });
+
+  const asleep = [];
+  const inbed = [];
 
   const handleTag = (tag) => {
     if (tag.startsWith("<Workout")) {
@@ -165,8 +175,20 @@ async function parseAppleHealthXML(file, onProgress) {
       return;
     }
     const type = attr(tag, "type");
-    const dt = day(attr(tag, "startDate"));
+    const sd = attr(tag, "startDate");
+    const dt = day(sd);
     if (!type || !dt) return;
+    if (type === "HKCategoryTypeIdentifierSleepAnalysis") {
+      const ed = attr(tag, "endDate");
+      const start = new Date(sd).getTime();
+      const end = new Date(ed).getTime();
+      if (!(end > start)) return;
+      const rec = { start, end, endDay: day(ed), bed: hhmm(sd), wake: hhmm(ed) };
+      const v = attr(tag, "value") || "";
+      if (/Asleep/i.test(v)) asleep.push(rec);
+      else if (/InBed/i.test(v)) inbed.push(rec);
+      return;
+    }
     const val = parseFloat(attr(tag, "value"));
     const b = ensure(dt);
     switch (type) {
@@ -176,13 +198,6 @@ async function parseAppleHealthXML(file, onProgress) {
       case "HKQuantityTypeIdentifierAppleExerciseTime": if (!isNaN(val)) b.exercise_minutes += val; break;
       case "HKQuantityTypeIdentifierActiveEnergyBurned": if (!isNaN(val)) b.active_energy += val; break;
       case "HKQuantityTypeIdentifierOxygenSaturation": if (!isNaN(val)) b._spo2.push(val <= 1 ? val * 100 : val); break;
-      case "HKCategoryTypeIdentifierSleepAnalysis": {
-        const start = new Date(attr(tag, "startDate"));
-        const end = new Date(attr(tag, "endDate"));
-        const hrs = (end - start) / 3.6e6;
-        if (hrs > 0 && hrs < 16) b._sleep += hrs;
-        break;
-      }
       default: break;
     }
   };
@@ -205,6 +220,37 @@ async function parseAppleHealthXML(file, onProgress) {
   }
   scan(buffer); // flush any trailing complete tag
 
+  // Bedtime as minutes-after-noon (monotonic across the evening->morning wrap),
+  // wake as minutes-after-midnight - so day-to-day consistency is comparable.
+  const bedToNoon = (hm) => { if (!hm) return null; const [h, m] = hm.split(":").map(Number); return ((h + 12) % 24) * 60 + m; };
+  const wakeToMid = (hm) => { if (!hm) return null; const [h, m] = hm.split(":").map(Number); return h * 60 + m; };
+  const assignSleep = (intervals) => {
+    if (!intervals.length) return;
+    intervals.sort((a, b) => a.start - b.start);
+    const merged = [];
+    let cur = null;
+    for (const iv of intervals) {
+      if (cur && iv.start <= cur.end) { if (iv.end > cur.end) { cur.end = iv.end; cur.endDay = iv.endDay; cur.wake = iv.wake; } }
+      else { if (cur) merged.push(cur); cur = { ...iv }; }
+    }
+    if (cur) merged.push(cur);
+    const byDay = {};
+    for (const m of merged) {
+      const hrs = (m.end - m.start) / 3.6e6;
+      if (!(hrs > 0 && hrs < 24) || !m.endDay) continue;
+      const d = byDay[m.endDay] || (byDay[m.endDay] = { hrs: 0, longest: 0, bed: null, wake: null });
+      d.hrs += hrs;
+      if (hrs > d.longest) { d.longest = hrs; d.bed = m.bed; d.wake = m.wake; }
+    }
+    for (const [d, info] of Object.entries(byDay)) {
+      const b = ensure(d);
+      b.sleep_hours = Math.round(info.hrs * 10) / 10;
+      b.bedtime_min = bedToNoon(info.bed);
+      b.wake_min = wakeToMid(info.wake);
+    }
+  };
+  assignSleep(asleep.length ? asleep : inbed); // prefer Asleep; fall back to InBed only if no Asleep records exist
+
   const rows = Object.values(buckets).map((b) => ({
     date: b.date,
     resting_hr: b._rhr.length ? Math.round(avg(b._rhr)) : null,
@@ -213,14 +259,16 @@ async function parseAppleHealthXML(file, onProgress) {
     exercise_minutes: b.exercise_minutes ? Math.round(b.exercise_minutes) : null,
     active_energy: b.active_energy ? Math.round(b.active_energy) : null,
     spo2: b._spo2.length ? Math.round(avg(b._spo2)) : null,
-    sleep_hours: b._sleep ? Math.round(b._sleep * 10) / 10 : null,
+    sleep_hours: b.sleep_hours,
+    bedtime_min: b.bedtime_min,
+    wake_min: b.wake_min,
     workouts: b.workouts || 0,
   }));
   const sorted = rows.sort((a, b) => a.date.localeCompare(b.date));
   if (!sorted.length) {
     throw new Error("No HealthKit records found. If you exported export_cda.xml, upload export.xml from the same export.zip instead - the CDA file uses a different format VisitPulse doesn't read.");
   }
-  return sorted.slice(-30);
+  return sorted;
 }
 
 /* ------------------------------------------------------------------ */
@@ -551,7 +599,10 @@ export default function VisitPulse() {
   const [feedback, setFeedback] = useState(null);
   const [parsing, setParsing] = useState(null); // { progress: 0..1, name } while streaming a large export
 
-  const trends = useMemo(() => computeTrends(data), [data]);
+  // data = FULL history (for the coach engine). recentData = last 30 days, which
+  // is what the clinical pre-visit flow (preview/trends/brief) operates on. D1.
+  const recentData = useMemo(() => (data ? data.slice(-RECENT_WINDOW_DAYS) : null), [data]);
+  const trends = useMemo(() => computeTrends(recentData), [recentData]);
   const brief = useMemo(() => (trends.length ? buildContextualBrief(trends, visitContext) : null), [trends, visitContext]);
   const portalMsg = useMemo(() => (brief ? buildPortalMessage(brief) : ""), [brief]);
   const fhir = useMemo(() => (trends.length ? buildFHIR(trends) : ""), [trends]);
@@ -621,9 +672,9 @@ export default function VisitPulse() {
     setCopied(id); setTimeout(() => setCopied(null), 1500);
   };
 
-  const coverage = data ? data.length : 0;
-  const recentStart = data && data.length >= 7 ? data[data.length - 7].date : null;
-  const lastDate = data ? data[data.length - 1].date : null;
+  const coverage = recentData ? recentData.length : 0;
+  const recentStart = recentData && recentData.length >= 7 ? recentData[recentData.length - 7].date : null;
+  const lastDate = recentData ? recentData[recentData.length - 1].date : null;
   const flaggedCount = trends.filter((t) => t.flagged).length;
 
   return (
@@ -762,15 +813,15 @@ export default function VisitPulse() {
                   <div className="text-xl font-semibold text-teal-700">{coverage}</div><div className="text-xs text-slate-400">days</div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-2">
-                  <div className="text-sm font-semibold text-teal-700">{data[0].date.slice(5)} to {lastDate.slice(5)}</div><div className="text-xs text-slate-400">window</div>
+                  <div className="text-sm font-semibold text-teal-700">{recentData[0].date.slice(5)} to {lastDate.slice(5)}</div><div className="text-xs text-slate-400">window</div>
                 </div>
               </div>
             </div>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {SIGNALS.map((s) => {
-                const w = windowAvg(data, s.key);
-                const completeness = Math.round((w.n / data.length) * 100);
+                const w = windowAvg(recentData, s.key);
+                const completeness = Math.round((w.n / recentData.length) * 100);
                 const Icon = s.icon;
                 return (
                   <div key={s.key} className="rounded-xl border border-slate-200 bg-white p-4">
@@ -778,7 +829,7 @@ export default function VisitPulse() {
                       <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Icon size={16} style={{ color: SIGNAL_COLORS[s.key] }} />{s.label}</div>
                       <span className={`rounded-full px-2 py-0.5 text-xs ${completeness >= 70 ? "bg-emerald-50 text-emerald-600" : completeness > 0 ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-400"}`}>{completeness}%</span>
                     </div>
-                    <div className="mt-2"><Spark data={data} dataKey={s.key} color={SIGNAL_COLORS[s.key]} /></div>
+                    <div className="mt-2"><Spark data={recentData} dataKey={s.key} color={SIGNAL_COLORS[s.key]} /></div>
                     <div className="mt-1 text-xs text-slate-400">avg {fmt(w.value, s.decimals)} {s.unit}</div>
                   </div>
                 );
@@ -803,7 +854,7 @@ export default function VisitPulse() {
               </div>
               <div className="h-60 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data} margin={{ top: 8, right: 16, left: -12, bottom: 0 }}>
+                  <LineChart data={recentData} margin={{ top: 8, right: 16, left: -12, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
                     <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#94a3b8" }} tickFormatter={(d) => d.slice(5)} interval={4} />
                     <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} domain={["auto", "auto"]} width={38} />

@@ -13,3 +13,16 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   the engine tests and a coach demo loader (see DECISIONS.md).
 - Wrote PLAN.md (phase sequence), DECISIONS.md, this log.
 - Build result: PASS.
+
+**2026-06-14 07:12 UTC — Phase 0b/0c: sleep fix + full history**
+- Rewrote `parseAppleHealthXML` sleep handling: counts only `Asleep*` stages
+  (InBed/Awake excluded, InBed used only as fallback when no Asleep records
+  exist), merges overlapping/contiguous intervals, attributes each night to its
+  WAKE date, and extracts bedtime (mins-after-noon) + wake (mins-after-midnight).
+- Parser now returns FULL history (removed `slice(-30)`). Added optional
+  `bedtime_min`/`wake_min` to FIELDS so CSV/JSON carry timing too.
+- Clinical flow unchanged behaviourally: added `recentData = data.slice(-30)` and
+  pointed preview/trends/brief at it (D1).
+- Validated merge logic in Node: 3 overlapping asleep segments -> 7.5h single
+  night on the wake day; bedtime/wake correct.
+- Build result: PASS.
