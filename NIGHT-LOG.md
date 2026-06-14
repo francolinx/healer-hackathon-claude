@@ -26,3 +26,15 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
 - Validated merge logic in Node: 3 overlapping asleep segments -> 7.5h single
   night on the wake day; bedtime/wake correct.
 - Build result: PASS.
+
+**2026-06-14 07:20 UTC — Phase 1+2: Historical-Best engine**
+- Added `src/healthEngine.js` (pure, LLM-free): completeness-weighted daily
+  composite score, calendar-timeline rolling windows, best-window selection with
+  a 60% coverage guard, behavioral profile, current state, per-metric gaps,
+  "% back to your best", realistic-goal guardrails (recency-aware target +
+  confound flags). Documented in SCORING.md.
+- Added synthetic 2-year fixture generator (tests/fixtures/genHistory.mjs) and
+  samples/sample_garmin_history.csv (665 rows, planted best window + decline).
+- Smoke test: best window 2025-03-26..04-29 (score 95.5, 14mo ago) vs current
+  45.8 -> 48% back; gaps correct; no spurious confounds.
+- Build result: PASS.
