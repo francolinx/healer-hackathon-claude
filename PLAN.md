@@ -35,3 +35,29 @@ LLM). Client-side only; no PHI leaves the browser.
 Deterministic facts only · non-diagnostic (wellness framing) · client-side only ·
 privacy claim stays true · robust to missing data · disclaimer verbatim ·
 sample-data fallback always works · additive only.
+
+---
+
+# PLAN (session 3) — Multi-source ingestion layer
+
+Build a pluggable, client-side, deterministic ingestion layer that normalizes
+ANY platform's health export into the existing canonical daily schema. Downstream
+(trends/brief/coach) keeps consuming the same `data` array unchanged.
+
+Order (durable framework + safety net FIRST, then adapters):
+- [ ] A. `src/ingest/`: canonical schema module; adapter interface; refactor
+      Apple Health + generic CSV + JSON into adapters; registry; router (single
+      file); reconciliation engine; `ingestFiles()` orchestrator. Wire into
+      App.onFile WITHOUT changing downstream. Tests. (non-breaking)
+- [ ] B. Zip + multi-file support (JSZip): unpack client-side, parse all relevant
+      entries, reconcile. Tests with a synthetic zip.
+- [ ] C. Guided column-mapping fallback UI for unrecognized tabular files
+      (preview columns -> map to canonical + date format). Safety net.
+- [ ] D. Source adapters w/ synthetic fixtures + tests, in order:
+      Health Connect, Google Fit (Takeout), Samsung Health, Fitbit, Garmin.
+- [ ] E. Ingestion summary UI: detected sources, counts, date range, per-source
+      field present/missing, provenance.
+- [ ] F. Docs: ADAPTERS.md + update NIGHT-LOG/DECISIONS/CLAUDE/README/TASKS.
+
+Guardrails: additive/non-breaking, client-side only, deterministic (no LLM),
+demo-never-breaks (sample fallback + graceful degrade to guided mapping).

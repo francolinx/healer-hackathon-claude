@@ -2,7 +2,6 @@ import React, { useState, useMemo, useRef, forwardRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from "recharts";
-import Papa from "papaparse";
 import { useReactToPrint } from "react-to-print";
 import {
   Activity, HeartPulse, Moon, Footprints, Dumbbell, Flame, Wind, FileText, Send,
@@ -13,6 +12,9 @@ import {
 import { logFeedback } from "./feedback.js";
 import { computeHistoricalBest, computeDailyScores } from "./healthEngine.js";
 import { buildCoachParts, generateCoachMessage, weeklySummary, bedtimeClock } from "./coach.js";
+import { ingestFiles } from "./ingest/index.js";
+import { normalizeRecords, parseCsvText, CORE_FIELDS, FIELD_LABELS } from "./ingest/schema.js";
+import { GuidedMapping } from "./ingest/mapping.jsx";
 import sampleHistoryCsv from "../samples/sample_garmin_history.csv?raw";
 
 /* ------------------------------------------------------------------ */
@@ -115,163 +117,16 @@ function buildSampleData() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Parsers                                                             */
+/* Numeric helper (file parsers now live in src/ingest/)               */
 /* ------------------------------------------------------------------ */
-const FIELDS = ["resting_hr", "avg_hr", "steps", "exercise_minutes", "active_energy", "spo2", "sleep_hours", "workouts", "bedtime_min", "wake_min"];
 const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
 
-function normalizeRows(rows) {
-  return rows
-    .filter((r) => r && (r.date || r.Date))
-    .map((r) => {
-      const o = { date: String(r.date || r.Date).slice(0, 10) };
-      FIELDS.forEach((f) => {
-        const v = r[f];
-        o[f] = v === "" || v === undefined || v === null ? null : Number(v);
-        if (Number.isNaN(o[f])) o[f] = null;
-      });
-      return o;
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-function parseCSV(text) {
-  const res = Papa.parse(text.trim(), { header: true, skipEmptyLines: true, dynamicTyping: true });
-  return normalizeRows(res.data);
-}
-
-function parseJSON(text) {
-  const data = JSON.parse(text);
-  const arr = Array.isArray(data) ? data : data.records || data.data || [];
-  return normalizeRows(arr);
-}
-
-// Streaming Apple Health export.xml parser. Real exports are commonly hundreds
-// of MB - too large to read into one string (JS max-string-length) or feed to
-// DOMParser. We read the file in byte-bounded slices and scan opening tags with
-// a regex, aggregating into daily buckets. Only the opening tag's attributes
-// (type/startDate/endDate/value) are needed; record children are ignored.
-// Angle brackets inside attribute values are XML-escaped in Apple exports, so
-// every literal '>' is a real tag terminator and we can split on it safely.
-// Bounded memory + a progress callback => multi-hundred-MB files parse fine.
-//
-// Sleep is special (see DECISIONS.md D2): Apple emits overlapping InBed + staged
-// Asleep records, so we collect raw intervals, count only "Asleep*" stages,
-// MERGE overlapping intervals (no double-counting), and attribute each night to
-// its WAKE date. Returns FULL history (D1); clinical screens slice the recent window.
-async function parseAppleHealthXML(file, onProgress) {
-  const CHUNK = 8 * 1024 * 1024; // 8 MB slices
-  const decoder = new TextDecoder("utf-8");
-  const day = (s) => (s ? s.slice(0, 10) : null);
-  const hhmm = (s) => (s && s.length >= 16 ? s.slice(11, 16) : null); // "HH:MM" wall-clock
-  const attr = (tag, name) => { const m = tag.match(new RegExp(name + '="([^"]*)"')); return m ? m[1] : null; };
-  const buckets = {};
-  const ensure = (dt) => (buckets[dt] = buckets[dt] || { date: dt, _rhr: [], _hr: [], steps: 0, exercise_minutes: 0, active_energy: 0, _spo2: [], workouts: 0, sleep_hours: null, bedtime_min: null, wake_min: null });
-
-  const asleep = [];
-  const inbed = [];
-
-  const handleTag = (tag) => {
-    if (tag.startsWith("<Workout")) {
-      const dt = day(attr(tag, "startDate"));
-      if (dt) ensure(dt).workouts += 1;
-      return;
-    }
-    const type = attr(tag, "type");
-    const sd = attr(tag, "startDate");
-    const dt = day(sd);
-    if (!type || !dt) return;
-    if (type === "HKCategoryTypeIdentifierSleepAnalysis") {
-      const ed = attr(tag, "endDate");
-      const start = new Date(sd).getTime();
-      const end = new Date(ed).getTime();
-      if (!(end > start)) return;
-      const rec = { start, end, endDay: day(ed), bed: hhmm(sd), wake: hhmm(ed) };
-      const v = attr(tag, "value") || "";
-      if (/Asleep/i.test(v)) asleep.push(rec);
-      else if (/InBed/i.test(v)) inbed.push(rec);
-      return;
-    }
-    const val = parseFloat(attr(tag, "value"));
-    const b = ensure(dt);
-    switch (type) {
-      case "HKQuantityTypeIdentifierRestingHeartRate": if (!isNaN(val)) b._rhr.push(val); break;
-      case "HKQuantityTypeIdentifierHeartRate": if (!isNaN(val)) b._hr.push(val); break;
-      case "HKQuantityTypeIdentifierStepCount": if (!isNaN(val)) b.steps += val; break;
-      case "HKQuantityTypeIdentifierAppleExerciseTime": if (!isNaN(val)) b.exercise_minutes += val; break;
-      case "HKQuantityTypeIdentifierActiveEnergyBurned": if (!isNaN(val)) b.active_energy += val; break;
-      case "HKQuantityTypeIdentifierOxygenSaturation": if (!isNaN(val)) b._spo2.push(val <= 1 ? val * 100 : val); break;
-      default: break;
-    }
-  };
-
-  const tagRe = /<(?:Record|Workout)\b[^>]*>/g;
-  const scan = (text) => { tagRe.lastIndex = 0; let m; while ((m = tagRe.exec(text))) handleTag(m[0]); };
-
-  let buffer = "";
-  let offset = 0;
-  while (offset < file.size) {
-    const buf = await file.slice(offset, offset + CHUNK).arrayBuffer();
-    offset += CHUNK;
-    buffer += decoder.decode(buf, { stream: offset < file.size });
-    const lastGt = buffer.lastIndexOf(">");
-    if (lastGt !== -1) {
-      scan(buffer.slice(0, lastGt + 1));
-      buffer = buffer.slice(lastGt + 1); // carry partial tag to next chunk
-    }
-    if (onProgress) onProgress(Math.min(offset, file.size) / file.size);
-  }
-  scan(buffer); // flush any trailing complete tag
-
-  // Bedtime as minutes-after-noon (monotonic across the evening->morning wrap),
-  // wake as minutes-after-midnight - so day-to-day consistency is comparable.
-  const bedToNoon = (hm) => { if (!hm) return null; const [h, m] = hm.split(":").map(Number); return ((h + 12) % 24) * 60 + m; };
-  const wakeToMid = (hm) => { if (!hm) return null; const [h, m] = hm.split(":").map(Number); return h * 60 + m; };
-  const assignSleep = (intervals) => {
-    if (!intervals.length) return;
-    intervals.sort((a, b) => a.start - b.start);
-    const merged = [];
-    let cur = null;
-    for (const iv of intervals) {
-      if (cur && iv.start <= cur.end) { if (iv.end > cur.end) { cur.end = iv.end; cur.endDay = iv.endDay; cur.wake = iv.wake; } }
-      else { if (cur) merged.push(cur); cur = { ...iv }; }
-    }
-    if (cur) merged.push(cur);
-    const byDay = {};
-    for (const m of merged) {
-      const hrs = (m.end - m.start) / 3.6e6;
-      if (!(hrs > 0 && hrs < 24) || !m.endDay) continue;
-      const d = byDay[m.endDay] || (byDay[m.endDay] = { hrs: 0, longest: 0, bed: null, wake: null });
-      d.hrs += hrs;
-      if (hrs > d.longest) { d.longest = hrs; d.bed = m.bed; d.wake = m.wake; }
-    }
-    for (const [d, info] of Object.entries(byDay)) {
-      const b = ensure(d);
-      b.sleep_hours = Math.round(info.hrs * 10) / 10;
-      b.bedtime_min = bedToNoon(info.bed);
-      b.wake_min = wakeToMid(info.wake);
-    }
-  };
-  assignSleep(asleep.length ? asleep : inbed); // prefer Asleep; fall back to InBed only if no Asleep records exist
-
-  const rows = Object.values(buckets).map((b) => ({
-    date: b.date,
-    resting_hr: b._rhr.length ? Math.round(avg(b._rhr)) : null,
-    avg_hr: b._hr.length ? Math.round(avg(b._hr)) : null,
-    steps: b.steps ? Math.round(b.steps) : null,
-    exercise_minutes: b.exercise_minutes ? Math.round(b.exercise_minutes) : null,
-    active_energy: b.active_energy ? Math.round(b.active_energy) : null,
-    spo2: b._spo2.length ? Math.round(avg(b._spo2)) : null,
-    sleep_hours: b.sleep_hours,
-    bedtime_min: b.bedtime_min,
-    wake_min: b.wake_min,
-    workouts: b.workouts || 0,
-  }));
-  const sorted = rows.sort((a, b) => a.date.localeCompare(b.date));
-  if (!sorted.length) {
-    throw new Error("No HealthKit records found. If you exported export_cda.xml, upload export.xml from the same export.zip instead - the CDA file uses a different format VisitPulse doesn't read.");
-  }
-  return sorted;
+// One-line description of an ingestion result for the preview header.
+function describeIngest(result) {
+  const labels = [...new Set((result.sources || []).map((s) => s.label))];
+  const n = result.records.length;
+  const range = n ? ` | ${result.records[0].date} to ${result.records[n - 1].date}` : "";
+  return `${labels.length ? labels.join(" + ") : "Upload"} | ${n} days${range}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -803,6 +658,8 @@ export default function VisitPulse() {
   const [visitContext, setVisitContext] = useState({ clinicianType: "general", chiefComplaint: "general", note: "" });
   const [feedback, setFeedback] = useState(null);
   const [parsing, setParsing] = useState(null); // { progress: 0..1, name } while streaming a large export
+  const [ingest, setIngest] = useState(null);   // full ingestion result (sources, provenance, conflicts)
+  const [mapping, setMapping] = useState(null);  // an unmapped tabular input -> guided column mapping
 
   // data = FULL history (for the coach engine). recentData = last 30 days, which
   // is what the clinical pre-visit flow (preview/trends/brief) operates on. D1.
@@ -830,7 +687,7 @@ export default function VisitPulse() {
   // Coach demo: a deterministic SYNTHETIC 2-year history bundled at build time.
   const loadSampleHistory = () => {
     try {
-      const rows = parseCSV(sampleHistoryCsv);
+      const rows = normalizeRecords(parseCsvText(sampleHistoryCsv).data);
       if (!rows.length) throw new Error("empty");
       setData(rows); setSource("Synthetic 2-year Garmin history (demo) | " + rows.length + " days");
       setError(null); setExperience("coach"); setScreen(1);
@@ -846,46 +703,47 @@ export default function VisitPulse() {
     logFeedback({ clinicianType: visitContext.clinicianType, chiefComplaint: visitContext.chiefComplaint, value });
   };
 
-  const onFile = async (e, kind) => {
-    const file = e.target.files?.[0];
+  // Unified multi-source ingestion: accepts one or many files, zips, any platform.
+  // The ingest layer sniffs + routes to adapters and reconciles into the canonical
+  // schema. Downstream (clinical + coach) consumes result.records unchanged.
+  const onFile = async (e) => {
+    const files = e.target.files;
     e.target.value = "";
-    if (!file) return;
-    const name = file.name.toLowerCase();
-    const isXml = kind === "xml" || name.endsWith(".xml");
-
-    // Apple Health export.xml: streamed in chunks so huge files (hundreds of MB) work.
-    if (isXml) {
-      if (name.includes("cda")) {
-        setError("That looks like export_cda.xml (Clinical Document format). Upload export.xml from the same export.zip instead - it holds the HealthKit records VisitPulse reads.");
-        return;
+    if (!files || !files.length) return;
+    setError(null);
+    setIngest(null);
+    setParsing({ progress: 0, name: files.length > 1 ? `${files.length} files` : files[0].name });
+    try {
+      const result = await ingestFiles(files, { onProgress: (p) => setParsing((s) => (s ? { ...s, progress: p } : s)) });
+      if (!result.records.length) {
+        if (result.unmapped && result.unmapped.length) {
+          // No adapter recognized a tabular file -> hand off to guided mapping.
+          setIngest(result);
+          setMapping(result.unmapped[0]);
+          return;
+        }
+        const why = result.warnings.length ? result.warnings.map((w) => w.message).join(" ") : "Could not find any health records in that upload.";
+        throw new Error(why);
       }
-      setError(null);
-      setParsing({ progress: 0, name: file.name });
-      try {
-        const rows = await parseAppleHealthXML(file, (p) => setParsing((s) => (s ? { ...s, progress: p } : s)));
-        if (!rows.length) throw new Error("Could not find any dated records in that file.");
-        setData(rows); setSource(file.name + " | " + rows.length + " days"); setError(null); setScreen(1);
-      } catch (err) {
-        setError((err && err.message) || "Could not parse that file. Try the sample data, CSV, or JSON.");
-      } finally {
-        setParsing(null);
-      }
-      return;
+      setData(result.records);
+      setIngest(result);
+      setSource(describeIngest(result));
+      setScreen(1);
+    } catch (err) {
+      setError((err && err.message) || "Could not parse that upload. Try the sample data, a CSV, or JSON.");
+    } finally {
+      setParsing(null);
     }
+  };
 
-    // CSV / JSON: small files, read directly.
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const rows = name.endsWith(".json") || kind === "json" ? parseJSON(reader.result) : parseCSV(reader.result);
-        if (!rows.length) throw new Error("Could not find any dated records in that file.");
-        setData(rows); setSource(file.name + " | " + rows.length + " days"); setError(null); setScreen(1);
-      } catch (err) {
-        setError((err && err.message) || "Could not parse that file. Try the sample data, CSV, or JSON.");
-      }
-    };
-    reader.onerror = () => setError("Could not read that file.");
-    reader.readAsText(file);
+  // After the guided mapping UI returns a column map, transform + ingest the rows.
+  const onMappingComplete = (records, fileName) => {
+    setMapping(null);
+    if (!records || !records.length) { setError("No rows could be mapped from that file."); return; }
+    setData(records);
+    setIngest({ records, sources: [{ source: "guidedMapping", label: "Guided mapping", records: records.length }], parsedSets: [], provenance: new Map(), conflicts: [], gapDays: 0, completeness: {}, unmapped: [], skipped: [], warnings: [] });
+    setSource(`${fileName} (guided mapping) | ${records.length} days`);
+    setScreen(1);
   };
 
   const copy = async (text, id) => {
@@ -969,8 +827,13 @@ export default function VisitPulse() {
           </div>
         )}
 
+        {/* Guided column-mapping fallback for unrecognized tabular files */}
+        {mapping && (
+          <GuidedMapping input={mapping} onComplete={onMappingComplete} onCancel={() => { setMapping(null); setError(null); }} />
+        )}
+
         {/* Screen 0: Upload */}
-        {screen === 0 && (
+        {screen === 0 && !mapping && (
           <div>
             {/* Vision hero */}
             <section className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-teal-50/50 px-6 py-8 sm:px-9 sm:py-10">
@@ -1015,16 +878,16 @@ export default function VisitPulse() {
 
             <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <label className="group cursor-pointer rounded-2xl border-2 border-dashed border-slate-200 bg-white p-5 transition hover:border-teal-300 hover:bg-teal-50/40">
-                <input type="file" accept=".xml" className="hidden" onChange={(e) => onFile(e, "xml")} />
+                <input type="file" accept=".xml,.csv,.tsv,.json,.zip" multiple className="hidden" onChange={onFile} />
                 <FileCode className="mb-3 text-teal-600" size={26} />
-                <div className="font-medium">Apple Health export.xml</div>
-                <div className="mt-1 text-sm text-slate-500">Upload <span className="font-medium text-slate-600">export.xml</span> (not export_cda.xml) from your Health export.zip. Streamed in-browser - large multi-hundred-MB exports are fine.</div>
+                <div className="font-medium">Upload any health export</div>
+                <div className="mt-1 text-sm text-slate-500">Apple Health, Health Connect, Google Fit, Samsung Health, Fitbit, Garmin. <span className="font-medium text-slate-600">XML, CSV, JSON, or a .zip</span> - drop several files at once.</div>
               </label>
               <label className="group cursor-pointer rounded-2xl border-2 border-dashed border-slate-200 bg-white p-5 transition hover:border-teal-300 hover:bg-teal-50/40">
-                <input type="file" accept=".csv,.json" className="hidden" onChange={(e) => onFile(e, "auto")} />
+                <input type="file" accept=".csv,.tsv,.json" multiple className="hidden" onChange={onFile} />
                 <FileSpreadsheet className="mb-3 text-teal-600" size={26} />
                 <div className="font-medium">Upload CSV / JSON</div>
-                <div className="mt-1 text-sm text-slate-500">Daily rows with the normalized fields. Most reliable upload path.</div>
+                <div className="mt-1 text-sm text-slate-500">Any tabular export. Unrecognized columns? We'll guide you through mapping them.</div>
               </label>
               <button onClick={loadSample} className="rounded-2xl border-2 border-teal-200 bg-teal-50 p-5 text-left transition hover:bg-teal-100/70">
                 <Database className="mb-3 text-teal-700" size={26} />

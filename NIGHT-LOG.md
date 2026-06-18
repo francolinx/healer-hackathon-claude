@@ -81,3 +81,16 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   best-window and recent-window shading always render (gap days could otherwise
   miss the categorical X axis). Removed an unused import.
 - Build PASS; tests 25/25 PASS.
+
+**2026-06-14 20:15 UTC — Session 3 Phase A+C: ingestion framework + guided mapping**
+- New src/ingest/: schema.js (canonical contract), router.js (sniff/zip/multi-file
+  dispatch), reconcile.js (merge by date w/ source-priority + provenance +
+  conflicts + gaps), index.js (ingestFiles/ingestInputs), adapters/{appleHealth,
+  genericCsv,genericJson}.js + registry, mapping.jsx (guided column mapping +
+  pure applyMapping/toISODate).
+- Refactored App.onFile to ingestFiles (multi-file + zip ready); upload inputs now
+  accept xml/csv/tsv/json/zip + multiple; unmapped tabular -> GuidedMapping UI.
+  Removed in-App parsers (moved to ingest); kept avg helper. Downstream unchanged.
+- tests/ingest.test.js: 16 tests (schema, appleHealth/csv/json adapters on real
+  samples, router detection, reconcile priority/provenance/conflict/gap/missing,
+  ingestInputs merge, mapping transform). Suite 42/42 PASS. Build PASS.

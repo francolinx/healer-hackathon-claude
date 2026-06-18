@@ -61,3 +61,40 @@ decision, why, and how to reverse it if you disagree.
 - **Why:** Lightweight, Vite-native, no runtime impact, no production bundle
   change. The brief explicitly permits a minimal runner.
 - **Reverse:** `npm rm -D vitest`, delete `tests/`, drop the `test` script.
+
+### D7 — Ingestion layer lives in `src/ingest/` (adapters/router/reconcile)
+- **Decision:** New `src/ingest/` package: `schema.js` (canonical contract),
+  `adapters/*` (each with `detect`/`parse`), `adapters/registry.js`, `router.js`
+  (sniff + dispatch + zip/multi-file), `reconcile.js` (merge by date with
+  source-priority + provenance), `index.js` (`ingestFiles`). App.jsx imports it.
+- **Why:** Keeps the single canonical contract, makes adapters independently
+  testable, and keeps App.jsx UI-only. Additive — old parser behavior preserved
+  by moving (not rewriting) Apple Health/CSV/JSON into the first adapters.
+- **Reverse:** Re-inline the parsers into App.jsx; delete `src/ingest/`.
+
+### D8 — Adapter interface: detect(input)->confidence, parse(input)->result
+- **Decision:** `input = { name, ext, size, head, text, file }` (head = first
+  ~64KB for signature sniffing without reading huge files; file = Blob for
+  streaming; text = full text for small/zip-entry files). `parse` returns
+  `{ records, provenance, completeness, warnings }`.
+- **Why:** Lets the big Apple Health XML keep streaming from the Blob while
+  text-based adapters work on strings (and stay pure/testable in Node).
+- **Reverse:** Change the interface in `adapters/*` + `router.js` together.
+
+### D9 — JSZip for client-side unzip (Android exports are zips)
+- **Decision:** Add `jszip` (runtime dep) to unpack zip archives in the browser.
+- **Why:** Health Connect / Google Fit (Takeout) / Samsung / Garmin all export
+  zip/folder bundles; we must read many inner files client-side. JSZip is the
+  de-facto lightweight, dependency-free, browser-safe option. No PHI leaves the
+  device. Loaded only when a zip is uploaded.
+- **Reverse:** `npm rm jszip`; the router falls back to treating zips as
+  unrecognized (guided mapping / clear error).
+
+### D10 — New-platform adapters are best-effort, marked NEEDS VALIDATION
+- **Decision:** Health Connect / Google Fit / Samsung / Fitbit / Garmin adapters
+  are implemented against documented/typical export structures with SYNTHETIC
+  fixtures, and clearly marked "NEEDS VALIDATION AGAINST A REAL EXPORT" in code
+  and ADAPTERS.md. The guided-mapping fallback covers whatever they miss.
+- **Why:** Real exports are unavailable in this environment; shipping defensive
+  adapters + a universal fallback beats blocking. Deterministic and safe.
+- **Reverse:** Correct field mappings per ADAPTERS.md when a real export arrives.
