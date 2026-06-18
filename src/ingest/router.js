@@ -43,7 +43,8 @@ async function fileToInput(file) {
 
 async function unzipToInputs(file) {
   const JSZip = (await import("jszip")).default;
-  const zip = await JSZip.loadAsync(file);
+  const buf = typeof file.arrayBuffer === "function" ? await file.arrayBuffer() : file;
+  const zip = await JSZip.loadAsync(buf);
   const inputs = [];
   for (const entry of Object.values(zip.files)) {
     if (entry.dir) continue;

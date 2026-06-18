@@ -94,3 +94,8 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
 - tests/ingest.test.js: 16 tests (schema, appleHealth/csv/json adapters on real
   samples, router detection, reconcile priority/provenance/conflict/gap/missing,
   ingestInputs merge, mapping transform). Suite 42/42 PASS. Build PASS.
+
+**2026-06-14 20:16 UTC — Session 3 Phase B: zip + multi-file**
+- Router unzip now reads an ArrayBuffer (robust in browser + Node). tests/ingestZip.test.js:
+  zip of canonical CSVs reconciled; multiple top-level files; unknown-in-zip -> unmapped.
+- Suite 45/45 PASS. Build PASS.
