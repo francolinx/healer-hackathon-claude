@@ -48,6 +48,24 @@ INTEGRATION-PLAN.md, MORNING-BRIEF.md.
 - [x] Communication-layer adapter (`src/coach.js`) template impl + LLM seam; `INTEGRATION-PLAN.md`.
 - [x] Unit tests (vitest) for the engine + coach (`npm test`, 25 passing).
 
+## Multi-source ingestion layer  [session 3 — DONE, build/test-verified]
+Status: shipped + deployed (auto-deploys from this branch on Vercel). See
+ADAPTERS.md, DECISIONS.md (D7–D10), NIGHT-LOG.md.
+- [x] Canonical schema + pluggable adapter framework (`src/ingest/`).
+- [x] Apple Health + generic CSV/JSON refactored into adapters (verified vs samples).
+- [x] Format router: sniff + zip unpack (JSZip) + multi-file + dispatch.
+- [x] Reconciliation: merge by date, source-priority per field, provenance,
+      conflict + gap flags, missing-field safety.
+- [x] Guided column-mapping fallback (any tabular file ingestible).
+- [x] Adapters (best-effort, NEEDS VALIDATION): Health Connect, Google Fit,
+      Samsung Health, Fitbit, Garmin — each with synthetic fixture + tests.
+- [x] Ingestion summary UI (sources, counts, range, present/missing, conflicts).
+- [x] Tests: 52 passing (engine, coach, ingest, adapters, zip).
+
+### Ingestion — waiting on real exports (correct field maps per ADAPTERS.md)
+- Validate Health Connect / Google Fit / Samsung / Fitbit / Garmin adapters
+  against one real export each; flip status to ✅ and adjust `pick()` candidates.
+
 ### Waiting on the user (decisions I could not make)
 - **Privacy posture (Phase 4 gate, the big one):** what — if anything — may leave the device for a
   future weekly LLM nudge backend (on-device vs server, consent, encryption, key management).

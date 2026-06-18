@@ -112,3 +112,11 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   date range + gap days, signals present vs missing, cross-source conflicts
   (higher-priority kept), and best-effort/validation notes. Rendered above the
   clinical preview and the coach view after any real upload. Build PASS.
+
+**2026-06-14 20:27 UTC — Session 3 Phase F: docs**
+- Wrote ADAPTERS.md (per-source format, fields, validation status, how to fix).
+- Updated CLAUDE.md (ingestion section + code map + jszip), README.md (multi-source
+  section + structure), TASKS.md (ingestion status + real-export follow-ups),
+  MORNING-BRIEF.md (live deploy URL + session-3 summary).
+- Confirmed Vercel is connected + auto-deploys this branch; pushed session-3 work
+  so the ingestion layer goes live. Build PASS; tests 52/52.

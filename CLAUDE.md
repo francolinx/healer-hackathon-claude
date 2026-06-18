@@ -12,6 +12,7 @@ something a clinician can read in 30 seconds. Built for the Hackers and Healers 
 - Tailwind CSS compiled via PostCSS (`tailwind.config.js`, `postcss.config.js`,
   `src/index.css`) - no runtime CDN, styling works fully offline
 - react-to-print for the client-side "Download PDF" of the brief
+- jszip for client-side unzip of multi-file health exports (Android zips)
 - Optional: `@supabase/supabase-js` for the feedback flywheel (gated behind env vars)
 - The app lives in `src/App.jsx`; `src/feedback.js` holds the optional Supabase logger
 
@@ -35,10 +36,22 @@ something a clinician can read in 30 seconds. Built for the Hackers and Healers 
   facts, never invent them (grounding contract in coach.js / INTEGRATION-PLAN.md).
   No LLM/network call at runtime.
 
+## Multi-source ingestion (`src/ingest/`) — canonical schema + adapters
+- One canonical daily record (`schema.js`) is the contract; downstream never changes.
+- Pluggable adapters (`adapters/*`, each `detect`/`parse`): Apple Health, generic
+  CSV/JSON (verified) + Health Connect, Google Fit, Samsung, Fitbit, Garmin
+  (best-effort, marked NEEDS VALIDATION — see ADAPTERS.md).
+- `router.js` sniffs files, unpacks zips (JSZip, client-side) + multi-file;
+  `reconcile.js` merges by date with source-priority + provenance + conflict/gap
+  flags; `mapping.jsx` is the guided column-mapping fallback (any tabular file).
+- Entry point `ingestFiles(fileList)` -> `{ records, sources, provenance,
+  conflicts, gapDays, completeness, unmapped, warnings }`. Deterministic, no LLM.
+
 ## Code map
 - `src/App.jsx` — UI for both experiences; `data` = FULL history, `recentData` =
-  last 30 days (clinical). Parsers (CSV/JSON/streaming Apple Health XML with the
-  asleep-only/merge/wake-date sleep fix). `CoachView` renders the engine facts.
+  last 30 days (clinical). Calls `ingestFiles`; `IngestionSummary` + `GuidedMapping`
+  surface sources/fields/conflicts. `CoachView` renders the engine facts.
+- `src/ingest/` — ingestion layer (schema, adapters, router, reconcile, mapping).
 - `src/healthEngine.js` — the FACTS engine (pure, tested in tests/).
 - `src/coach.js` — the COMMUNICATION layer (template; LLM seam).
 - `src/feedback.js` — optional Supabase flywheel (gated by env).

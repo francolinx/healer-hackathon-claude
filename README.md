@@ -85,6 +85,27 @@ CSV uses the same field names as headers. Missing fields/days are handled and sh
 
 ---
 
+## Multi-source ingestion (any platform, especially Android)
+
+Upload **one or many files, or a `.zip`** from any platform — VisitPulse sniffs each file,
+routes it to the right adapter, and **reconciles everything into the one canonical schema** the
+rest of the app consumes. All client-side, deterministic, no PHI leaves the device.
+
+Adapters (see **ADAPTERS.md** for assumed formats + validation status):
+- ✅ **Apple Health** (`export.xml`), **generic CSV/JSON** — verified against samples.
+- ⚠️ **Health Connect**, **Google Fit (Takeout)**, **Samsung Health**, **Fitbit**, **Garmin
+  Connect** — best-effort against documented formats, marked *NEEDS VALIDATION* until checked
+  against a real export.
+
+How it works (`src/ingest/`): **router** (sniff + unzip via JSZip + multi-file) →
+**adapters** (`detect`/`parse`) → **reconciliation** (merge by date, source-priority per field,
+provenance, conflict + gap flags). Anything tabular we can't auto-map opens a **guided
+column-mapping** UI (pick which column is which canonical field + date format) — so *any* tabular
+export is ingestible. After upload, an **ingestion summary** shows detected sources, record
+counts, date range, which signals are present vs missing, and any cross-source conflicts.
+
+---
+
 ## Drop into an existing Vite repo
 
 Everything lives in `src/App.jsx` (single file, default export). To reuse it:
@@ -110,15 +131,17 @@ visitpulse/
   src/
     main.jsx          # React entry (imports index.css)
     index.css         # @tailwind directives + print styles
-    App.jsx           # UI for both experiences (clinical brief + health coach), parsers
+    App.jsx           # UI for both experiences (clinical brief + health coach)
     healthEngine.js   # FACTS layer: deterministic Historical-Best engine (LLM-free)
     coach.js          # COMMUNICATION layer: template coach messages (+ LLM seam)
     feedback.js       # optional Supabase feedback logger (no-op when unconfigured)
+    ingest/           # multi-source ingestion: schema, adapters/, router, reconcile, mapping
   samples/
     sample_garmin.csv          # 30-day clinical demo fixture
     sample_garmin_history.csv  # SYNTHETIC 2-year coach fixture
-  tests/              # vitest unit tests for the engine + coach; fixtures/genHistory.mjs
+  tests/              # vitest: engine, coach, ingest, adapters; fixtures/ (synthetic exports)
   SCORING.md          # how the engine computes its facts
+  ADAPTERS.md         # each ingestion source: format, fields, validation status
   INTEGRATION-PLAN.md # future messaging/LLM design + privacy gate
 ```
 

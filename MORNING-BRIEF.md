@@ -1,7 +1,22 @@
 # MORNING-BRIEF — what happened overnight
 
-**Deploy URL:** _not deployed by me — needs your Vercel account (see "Deploy" below)._
-All work is committed and pushed to branch **`claude/modest-sagan-zgmmeg`**.
+**Deploy URL (LIVE):** the repo is connected to Vercel and **auto-deploys** on every
+push to `claude/modest-sagan-zgmmeg`. Newest production build:
+`https://healer-hackathon-claude-git-f40245-leothelion059-2425s-projects.vercel.app`
+(stable branch alias — always points at the latest). All work is committed + pushed.
+
+## Session 3 update — Multi-source ingestion (NEW)
+Upload **any platform's export** (Apple Health, Health Connect, Google Fit,
+Samsung, Fitbit, Garmin), **multiple files, or a `.zip`** → everything normalizes
+into the one canonical schema the app already uses. Client-side, deterministic,
+no PHI leaves the device. Apple Health + CSV/JSON are verified; the 5 new platform
+adapters are best-effort and **NEED VALIDATION against a real export** (see
+ADAPTERS.md). A **guided column-mapping** fallback makes any tabular file
+ingestible, and an **ingestion summary** shows sources/fields/conflicts. Tests:
+**52 passing** (engine, coach, ingest, adapters, zip). The one thing waiting on
+you: drop a real export from each platform so I can flip adapters to ✅ verified.
+
+---
 
 ## TL;DR
 VisitPulse now has **two experiences** behind a top-of-page toggle, and both
