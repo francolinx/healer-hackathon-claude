@@ -99,3 +99,10 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
 - Router unzip now reads an ArrayBuffer (robust in browser + Node). tests/ingestZip.test.js:
   zip of canonical CSVs reconciled; multiple top-level files; unknown-in-zip -> unmapped.
 - Suite 45/45 PASS. Build PASS.
+
+**2026-06-14 20:23 UTC — Session 3 Phase D: platform adapters**
+- Added adapters (each defensive, marked NEEDS VALIDATION): Health Connect,
+  Google Fit (Takeout), Samsung Health, Fitbit, Garmin + shared _util.js
+  (isoDay/pick/dayAgg). Registered all in registry.js.
+- Synthetic fixtures under tests/fixtures/sources/ + tests/adapters.test.js
+  (7 tests: detection + canonical mapping per source). Suite 52/52 PASS. Build PASS.

@@ -3,14 +3,23 @@
 /* ------------------------------------------------------------------ */
 // Source-specific adapters first (they detect with higher confidence); the
 // generic CSV/JSON adapters are the low-priority fallback before guided mapping.
-// New platform adapters are appended here as they are implemented (Phase D).
 
 import { appleHealthAdapter } from "./appleHealth.js";
+import { healthConnectAdapter } from "./healthConnect.js";
+import { googleFitAdapter } from "./googleFit.js";
+import { samsungHealthAdapter } from "./samsungHealth.js";
+import { fitbitAdapter } from "./fitbit.js";
+import { garminAdapter } from "./garmin.js";
 import { genericJsonAdapter } from "./genericJson.js";
 import { genericCsvAdapter } from "./genericCsv.js";
 
 export const ADAPTERS = [
   appleHealthAdapter,
+  healthConnectAdapter,
+  googleFitAdapter,
+  samsungHealthAdapter,
+  fitbitAdapter,
+  garminAdapter,
   genericJsonAdapter,
   genericCsvAdapter,
 ];

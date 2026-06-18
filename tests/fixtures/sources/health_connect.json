@@ -1,0 +1,9 @@
+[
+  {"recordType":"StepsRecord","startTime":"2026-04-01T08:00:00Z","endTime":"2026-04-01T09:00:00Z","count":3000},
+  {"recordType":"StepsRecord","startTime":"2026-04-01T18:00:00Z","count":2000},
+  {"recordType":"RestingHeartRateRecord","time":"2026-04-01T07:00:00Z","beatsPerMinute":55},
+  {"recordType":"SleepSessionRecord","startTime":"2026-03-31T23:00:00Z","endTime":"2026-04-01T07:00:00Z"},
+  {"recordType":"ActiveCaloriesBurnedRecord","startTime":"2026-04-01T12:00:00Z","energy":{"inKilocalories":600}},
+  {"recordType":"OxygenSaturationRecord","time":"2026-04-01T03:00:00Z","percentage":97},
+  {"recordType":"ExerciseSessionRecord","startTime":"2026-04-01T17:00:00Z","endTime":"2026-04-01T17:45:00Z"}
+]
