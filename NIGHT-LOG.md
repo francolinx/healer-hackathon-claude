@@ -106,3 +106,9 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   (isoDay/pick/dayAgg). Registered all in registry.js.
 - Synthetic fixtures under tests/fixtures/sources/ + tests/adapters.test.js
   (7 tests: detection + canonical mapping per source). Suite 52/52 PASS. Build PASS.
+
+**2026-06-14 20:25 UTC — Session 3 Phase E: ingestion summary UI**
+- Added IngestionSummary component: detected sources + per-source day counts,
+  date range + gap days, signals present vs missing, cross-source conflicts
+  (higher-priority kept), and best-effort/validation notes. Rendered above the
+  clinical preview and the coach view after any real upload. Build PASS.

@@ -470,6 +470,72 @@ function GapRow({ g }) {
   );
 }
 
+// Ingestion summary: detected sources, counts, date range, fields present/missing,
+// cross-source conflicts, and best-effort/validation notes. All from the
+// deterministic ingest result; auditable + non-diagnostic.
+function IngestionSummary({ ingest }) {
+  if (!ingest || !ingest.records || !ingest.records.length) return null;
+  const recs = ingest.records;
+  const range = `${recs[0].date} to ${recs[recs.length - 1].date}`;
+  const comp = ingest.completeness || {};
+  const present = CORE_FIELDS.filter((f) => (comp[f] || 0) > 0);
+  const missing = CORE_FIELDS.filter((f) => !((comp[f] || 0) > 0));
+  const validationNotes = [...new Set((ingest.warnings || []).map((w) => w.message).filter((m) => /NEEDS VALIDATION/.test(m)))];
+  const otherWarnings = (ingest.warnings || []).filter((w) => !/NEEDS VALIDATION/.test(w.message));
+
+  return (
+    <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Database size={16} className="text-teal-600" /> Ingestion summary</div>
+        <div className="text-xs text-slate-400">{recs.length} days · {range}{ingest.gapDays ? ` · ${ingest.gapDays} gap day${ingest.gapDays === 1 ? "" : "s"}` : ""}</div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(ingest.sources || []).map((s) => (
+          <span key={s.source} className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
+            {s.label}<span className="text-teal-500/70">· {s.records} days</span>
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Signals present</div>
+          <div className="flex flex-wrap gap-1.5">
+            {present.map((f) => <span key={f} className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700"><CheckCircle2 size={11} />{FIELD_LABELS[f] || f}</span>)}
+            {!present.length && <span className="text-xs text-slate-400">none</span>}
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Missing signals</div>
+          <div className="flex flex-wrap gap-1.5">
+            {missing.map((f) => <span key={f} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{FIELD_LABELS[f] || f}</span>)}
+            {!missing.length && <span className="text-xs text-slate-400">none — full coverage</span>}
+          </div>
+        </div>
+      </div>
+
+      {ingest.conflicts && ingest.conflicts.length > 0 && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="font-medium">{ingest.conflicts.length} cross-source conflict{ingest.conflicts.length === 1 ? "" : "s"}</span> — kept the higher-priority source. e.g. {ingest.conflicts.slice(0, 2).map((c) => `${c.field} on ${c.date} (${c.kept.source} ${c.kept.value} vs ${c.other.source} ${c.other.value})`).join("; ")}.
+        </div>
+      )}
+
+      {validationNotes.length > 0 && (
+        <div className="mt-3 flex items-start gap-2 text-xs text-slate-500">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-400" />
+          <span>Some adapters are best-effort and need validation against a real export (see ADAPTERS.md). Mapped values are shown for transparency; verify before clinical use.</span>
+        </div>
+      )}
+      {otherWarnings.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {otherWarnings.slice(0, 4).map((w, i) => <li key={i} className="text-xs text-slate-400">{w.file}: {w.message}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function CoachView({ facts, dailyScores, weekly, coachParts, copyText, copy, copied }) {
   const [tab, setTab] = useState("best");
   if (!facts) return null;
@@ -826,6 +892,9 @@ export default function VisitPulse() {
             <div className="mt-1 text-xs text-teal-700/80">Large exports can take a minute. Everything stays on your device - nothing is uploaded.</div>
           </div>
         )}
+
+        {/* Ingestion summary (sources, fields present/missing, conflicts) */}
+        {ingest && data && (experience === "coach" || screen === 1) && <IngestionSummary ingest={ingest} />}
 
         {/* Guided column-mapping fallback for unrecognized tabular files */}
         {mapping && (
