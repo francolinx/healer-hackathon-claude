@@ -4,6 +4,7 @@
 
 import { ALL_LENSES, SELECTABLE_LENSES, generalLens } from "./configs.js";
 import { normalizeLens, mergeLenses } from "./schema.js";
+import "./heroes.js"; // side-effect: registers the condition hero computations
 
 const BY_ID = Object.fromEntries(ALL_LENSES.map((l) => [l.id, l]));
 

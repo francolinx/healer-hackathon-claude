@@ -147,3 +147,17 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   rule), README.md (condition lenses section + structure), TASKS.md (lens status +
   next-prompt hero registrations).
 - Build PASS; tests 67/67.
+
+**2026-06-15 00:32 UTC — Session 5 Phase A+B: correlation engine + hero computations**
+- src/lenses/correlation.js: pure lagged Pearson engine (toSeries, eventSeries,
+  pearson, stdDev, alignedPairs, laggedCorrelation, strengthLabel). Tests (8).
+- src/lenses/heroes.js: registers all four heroes via the registry:
+  pots(orthostatic_hr) HR elevation/instability/coupling + activity tolerance +
+  honest standing-HR gap; migraine(trigger_correlation) lagged triggers vs attack
+  log + attack stats (+ honest "log attacks" path with wearable proxy patterns);
+  lyme(symptom_flare_load) reuses the trigger engine; long_covid(pem_load)
+  exertion->next-day resting HR. Imported for side-effect registration in index.js.
+- Synthetic fixtures + tests/heroes.test.js: POTS patterns + gap, migraine planted
+  sleep->attack (detected, lag1, ranked #1) vs spurious steps (weaker), lyme flare,
+  PEM, missing-data safety, registry dispatch. Updated lenses.test seam test.
+- Suite 85/85 PASS. Build PASS.

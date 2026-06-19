@@ -124,3 +124,23 @@ decision, why, and how to reverse it if you disagree.
 - **Why:** Prompt asks for persistence "consistent with how the app persists";
   ids are not PHI, so the privacy claim stays true.
 - **Reverse:** Remove the load/save effect; selection becomes session-only state.
+
+### D14 — Heroes + correlation engine are established THIS session (prior lenses were stubs)
+- **Decision:** The previous session shipped all 4 condition lenses as stubs with
+  no registered hero computations and no correlation engine (its prompt said to).
+  This session adds `src/lenses/correlation.js` (reusable lagged Pearson) and
+  `src/lenses/heroes.js` (registers pots, migraine, and — reusing the same
+  primitives — long_covid + lyme), so all four conditions are now "implemented".
+- **Why:** The POTS/Migraine prompt assumed those existed; building the shared
+  primitives once and filling all four is the additive, non-duplicating choice.
+- **Reverse:** Delete heroes.js/correlation.js; lenses fall back to stub configs
+  (heroSignal keys with no registered fn -> computeHero returns null -> no hero UI).
+
+### D15 — Symptom/attack logs are passed via options (no logging store yet)
+- **Decision:** Migraine/Lyme heroes correlate triggers against an attack/flare log
+  supplied in `options.symptomLog` ([{date, type, severity?}]). The app has no
+  persisted symptom log yet, so the live brief honestly shows "log attacks to
+  surface triggers" (migraine also shows wearable proxy patterns), while tests
+  feed a synthetic log to verify the correlation engine.
+- **Why:** Honest + deterministic; the engine is ready for a future logging UI.
+- **Reverse:** When a logging store exists, pass it as options.symptomLog.

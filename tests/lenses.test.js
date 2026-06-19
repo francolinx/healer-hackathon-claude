@@ -63,12 +63,20 @@ describe("single + multi condition selection", () => {
 });
 
 describe("hero registry seam", () => {
-  it("returns null for unregistered hero signals (stubs today)", () => {
-    expect(computeHero(getLens("migraine"), [], {})).toBeNull();
-    expect(hasHero(HERO_SIGNALS.PEM_LOAD)).toBe(false);
+  it("the general lens has no hero computation", () => {
+    expect(computeHero(getLens("general"), [], {})).toBeNull();
   });
-  it("a later prompt can register a hero without touching configs", () => {
-    registerHero(HERO_SIGNALS.PEM_LOAD, (records) => ({ count: records.length }));
-    expect(computeHero(getLens("long_covid_mecfs"), [1, 2, 3], {})).toEqual({ count: 3 });
+  it("all four condition heroes are registered and dispatch by heroSignal", () => {
+    for (const id of ["long_covid_mecfs", "pots_dysautonomia", "migraine", "lyme"]) {
+      const lens = getLens(id);
+      expect(hasHero(lens.heroSignal)).toBe(true);
+      const facts = computeHero(lens, [], {});
+      expect(facts).not.toBeNull();
+      expect(facts.heroSignal).toBe(lens.heroSignal); // returns a facts envelope (ok:false on empty data)
+    }
+  });
+  it("a later prompt can override a hero without touching configs", () => {
+    registerHero(HERO_SIGNALS.PEM_LOAD, (records) => ({ heroSignal: HERO_SIGNALS.PEM_LOAD, count: records.length }));
+    expect(computeHero(getLens("long_covid_mecfs"), [1, 2, 3], {})).toEqual({ heroSignal: HERO_SIGNALS.PEM_LOAD, count: 3 });
   });
 });

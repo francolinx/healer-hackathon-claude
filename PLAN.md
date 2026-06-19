@@ -83,3 +83,28 @@ reproduces today's behavior exactly.
 - [ ] E. Docs: LENSES.md + NIGHT-LOG/DECISIONS/CLAUDE/README/TASKS.
 
 Guardrails: config not forks, additive, deterministic, client-side, demo-never-breaks.
+
+---
+
+# PLAN (session 5) — POTS + Migraine lenses (hero computations)
+
+NOTE: prior session shipped all 4 condition lenses as STUBS (no registered heroes)
+and there is NO correlation engine yet. So this session first establishes the
+reusable deterministic primitives, then implements the heroes (and fills all four
+so "all conditions live" is honest).
+
+- [ ] A. `src/lenses/correlation.js` — pure lagged Pearson correlation engine
+      (series build, aligned pairs at lag, variance/min-pairs guards). Tests.
+- [ ] B. `src/lenses/heroes.js` — register hero computations via the registry:
+      pots(orthostatic_hr) HR patterns + activity tolerance + honest gap flag;
+      migraine(trigger_correlation) lagged triggers vs attack log + attack stats;
+      also long_covid(pem_load) + lyme(symptom_flare_load) reusing the primitives.
+      Synthetic fixtures + tests (detect planted assoc, avoid spurious, missing data).
+- [ ] C. Wire computeHero(activeLens, records, opts) into App; render a deterministic
+      "Condition focus" hero section in the brief (disclaimer kept). Default/others
+      unaffected (no registered hero -> nothing renders).
+- [ ] D. Docs: SCORING.md (hero math), LENSES.md (statuses -> implemented),
+      NIGHT-LOG/DECISIONS/CLAUDE/README/TASKS.
+
+Guardrails: deterministic, non-diagnostic, honest about wearable limits (POTS
+orthostatic gap), robust to nulls, additive, client-side.
