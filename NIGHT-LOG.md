@@ -169,3 +169,10 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   (rows, proxy patterns, notes, honest gaps). briefPlainText(brief, heroList) folds it
   into copy/PDF after the condition framing; PrintableBrief shows it too.
 - tests/brief.lens.test.js: hero text folded in / omitted. Suite 87/87 PASS. Build PASS.
+
+**2026-06-15 00:38 UTC — Session 5 Phase D: docs**
+- SCORING.md §9 (correlation engine + all four hero computations math).
+- LENSES.md: all four conditions -> "implemented"; symptom-log note.
+- CLAUDE.md (heroes/correlation in lens section + code map), README.md (condition
+  heroes paragraph), TASKS.md (heroes done; next = symptom-logging UI).
+- Build PASS; tests 87/87.

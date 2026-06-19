@@ -66,16 +66,22 @@ Today only `none` is registered (the general lens has no hero metric).
   that append to the free-text note (shared verbatim, never interpreted).
 
 ## Per-condition status
-| id | display | status | hero signal (planned) | notes |
-|----|---------|--------|-----------------------|-------|
+| id | display | status | hero signal | notes |
+|----|---------|--------|-------------|-------|
 | `general` | General (no condition) | **default** | none | Reproduces today's behavior exactly. |
-| `long_covid_mecfs` | Long COVID / ME-CFS | **stub** | `pem_load` | PEM: exertion → next-day recovery. Presets + framing populated; hero TBD. |
-| `pots_dysautonomia` | POTS / Dysautonomia | **stub** | `orthostatic_hr` | HR response to posture/activity. |
-| `migraine` | Migraine | **stub** | `trigger_correlation` | Sleep/schedule triggers before headache days. |
-| `lyme` | Lyme / chronic Lyme | **stub** | `symptom_flare_load` | Relapsing-remitting flares vs activity/sleep. |
+| `long_covid_mecfs` | Long COVID / ME-CFS | **implemented** | `pem_load` | Exertion → next-day resting-HR (PEM proxy) + activity tolerance. |
+| `pots_dysautonomia` | POTS / Dysautonomia | **implemented** | `orthostatic_hr` | HR elevation/instability/coupling + activity tolerance; honest standing-HR gap. |
+| `migraine` | Migraine | **implemented** | `trigger_correlation` | Lagged triggers vs attack log + attack stats; honest no-log fallback. |
+| `lyme` | Lyme / chronic Lyme | **implemented** | `symptom_flare_load` | Lagged exertion/sleep vs flare log (reuses the trigger engine). |
 
-**Stub** = presets + brief framing are populated and usable today; the hero
-computation is registered by a later prompt. Nothing about a stub breaks the app.
+All four hero computations are registered in `src/lenses/heroes.js` (built on the
+deterministic `src/lenses/correlation.js`) and surfaced in the brief's **Condition
+focus** section (screen + copy + PDF). See SCORING.md §9 for the math.
+
+**Symptom/attack logs** (migraine, lyme) are passed via `options.symptomLog`
+(`[{date, type, severity?}]`). There is no persisted logging store yet, so the live
+brief shows an honest "log your attacks" state (migraine also shows wearable proxy
+patterns); the correlation engine is proven by the unit tests with synthetic logs.
 
 ## Adding or evolving a condition
 1. Add/edit a config object in `src/lenses/configs.js` (and to `ALL_LENSES`).

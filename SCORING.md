@@ -80,3 +80,42 @@ bedtime/wake (+ bedtime std for consistency).
 All thresholds live in `ENGINE_CONFIG` / `METRIC_SPECS` at the top of
 `src/healthEngine.js`. Change them there; the unit tests in `tests/` pin the
 behavior so regressions surface immediately.
+
+---
+
+## 9. Condition hero computations (lenses)
+
+Each condition lens can register a deterministic "hero" metric
+(`src/lenses/heroes.js`, via `src/lenses/correlation.js`). All are auditable,
+non-diagnostic, robust to missing data, and honest about wearable limits.
+
+### Lagged Pearson correlation (`correlation.js`)
+- `toSeries(records, key)` → date→value map (skips missing).
+- `eventSeries(log, span)` → binary date→{0,1} over the span (attack/flare days).
+- `alignedPairs(x, y, lag)` aligns x at day *d* with y at day *d+lag*.
+- `pearson(xs, ys)` → r∈[-1,1], or `null` when n<2 or either side has no variance.
+- `laggedCorrelation(x, y, {lags, minPairs})` → strongest `{lag, r, n}` by |r|
+  meeting `minPairs` (default 8), plus every lag's r/n for auditing. `strengthLabel(r)`:
+  strong ≥0.5, moderate ≥0.3, weak ≥0.15, else negligible. These are observed
+  associations with a sample count — never causal or diagnostic claims.
+
+### POTS / dysautonomia (`orthostatic_hr`)
+From wearable records: resting(or avg)-HR **elevation** (recent-30 mean − baseline
+median), day-to-day **instability** (SD over recent 30), **activity↔HR coupling**
+(Pearson steps vs HR, lag 0), and **activity tolerance** (recent vs baseline steps).
+Falls back to avg HR if resting HR is sparse (flagged). **Honest gap (always shown):
+standing/orthostatic HR change — the core POTS pattern — is not in consumer exports.**
+
+### Migraine (`trigger_correlation`) & Lyme (`symptom_flare_load`)
+Correlate candidate triggers (sleep duration, irregular bedtime = |bedtime − median|,
+resting HR, steps/exertion, plus any logged factors) against an **attack/flare log**
+(`options.symptomLog`) using `laggedCorrelation` (lags 0–2). Returns associations
+ranked by |r| with lag + n + direction, plus attack **frequency/severity** stats.
+With no log it returns an honest "log your attacks" state — and, for the wearable
+self-patterns that commonly precede symptoms (e.g. short sleep → next-day resting HR),
+clearly labeled as patterns, not trigger correlations.
+
+### Long COVID / ME-CFS (`pem_load`)
+`laggedCorrelation(exertion, resting_hr, lag 1)` — do higher-exertion days precede a
+higher next-day resting HR (a physiological **PEM proxy**) — plus activity tolerance.
+Flagged as a proxy: PEM is symptom-defined and also involves cognitive exertion.

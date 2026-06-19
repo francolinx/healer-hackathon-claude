@@ -92,9 +92,15 @@ Lyme, or several at once for comorbidity. A lens is **configuration, not a code 
 (`src/lenses/`): it sets the symptom/factor presets, which signals are featured, and how
 the pre-visit brief is framed. The deterministic engines are identical across conditions —
 only the config changes, so adding a condition later is editing a config object. The
-**General** default reproduces the app's original behavior exactly. Condition computations
-("hero signals") attach later via a registry seam without touching the selector. See
-**LENSES.md**. (The four condition configs ship as well-structured stubs today.)
+**General** default reproduces the app's original behavior exactly. See **LENSES.md**.
+
+All four conditions are implemented with deterministic "hero" computations surfaced in the
+brief's **Condition focus** section: **POTS** shows HR elevation/instability/coupling + activity
+tolerance (and honestly flags that standing/orthostatic HR isn't in wearable exports);
+**migraine** & **Lyme** show lagged trigger↔attack/flare associations (auditable r + lag + n)
+from a logged attack list; **long COVID/ME-CFS** shows exertion → next-day resting-HR (a PEM
+proxy). Built on a pure lagged-Pearson engine — non-diagnostic, associations not causes,
+client-side. See SCORING.md §9.
 
 ## Multi-source ingestion (any platform, especially Android)
 

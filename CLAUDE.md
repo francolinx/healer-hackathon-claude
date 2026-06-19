@@ -53,16 +53,20 @@ something a clinician can read in 30 seconds. Built for the Hackers and Healers 
   conditions (comorbidity). `general` = default = today's behavior exactly.
 - Engines/components READ the active lens; NEVER branch on condition
   (`if (condition === 'lyme')` is banned — add to the config instead).
-- `heroRegistry.js` maps heroSignal keys -> deterministic fns (seam; only `none`
-  today). Ships: general (default) + long_covid_mecfs/pots_dysautonomia/migraine/
-  lyme STUBS. Selection persists in localStorage (ids only). See LENSES.md.
+- `heroRegistry.js` maps heroSignal keys -> deterministic fns; `heroes.js`
+  registers all four (built on `correlation.js`, a pure lagged-Pearson engine):
+  pots(HR patterns + activity tolerance, honest orthostatic gap), migraine &
+  lyme(lagged triggers vs attack/flare log), long_covid(exertion->next-day RHR).
+  Surfaced in the brief's "Condition focus" section. Selection persists in
+  localStorage (ids only). All four conditions implemented. See LENSES.md / SCORING.md §9.
 
 ## Code map
 - `src/App.jsx` — UI for both experiences; `data` = FULL history, `recentData` =
   last 30 days (clinical). Calls `ingestFiles`; `IngestionSummary` + `GuidedMapping`
   surface sources/fields/conflicts. `CoachView` renders the engine facts.
   `buildContextualBrief(trends, ctx, lens)` is lens-aware (exported for tests).
-- `src/lenses/` — condition lens config + merge + hero-registry seam.
+- `src/lenses/` — condition lens config + merge + hero-registry; `correlation.js`
+  (lagged Pearson) + `heroes.js` (4 deterministic hero computations).
 - `src/ingest/` — ingestion layer (schema, adapters, router, reconcile, mapping).
 - `src/healthEngine.js` — the FACTS engine (pure, tested in tests/).
 - `src/coach.js` — the COMMUNICATION layer (template; LLM seam).

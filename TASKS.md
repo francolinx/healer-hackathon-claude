@@ -76,10 +76,18 @@ Status: shipped. Config-driven lenses (no forks). See LENSES.md, DECISIONS.md (D
       section order), trends featured ★, visit-context preset chips.
 - [x] Tests: lenses + lens-aware brief (67 total passing).
 
+### Condition hero computations  [session 5 — DONE]
+- [x] Lagged-Pearson correlation engine (`src/lenses/correlation.js`).
+- [x] All four heroes registered (`src/lenses/heroes.js`): POTS (orthostatic_hr),
+      migraine (trigger_correlation), Lyme (symptom_flare_load), long COVID (pem_load).
+- [x] Surfaced in the brief "Condition focus" section (screen + copy + PDF).
+- [x] Synthetic fixtures + tests (correlation 8, heroes; planted assoc detected,
+      spurious avoided, missing-data safe). Suite 87 passing. LENSES.md all four "implemented".
+
 ### Lenses — next prompts
-- Register each condition's hero computation via `registerHero(key, fn)` (PEM load,
-  orthostatic HR, migraine trigger correlation, Lyme flare load) — deterministic only.
-- Flip each condition status stub -> verified in LENSES.md once its hero ships.
+- Add a symptom/attack LOGGING UI so migraine/Lyme trigger correlation runs on real
+  in-app data (today the engine reads `options.symptomLog`; live brief shows the
+  honest "log attacks" state). Then those heroes show real associations in the demo.
 
 ### Waiting on the user (decisions I could not make)
 - **Privacy posture (Phase 4 gate, the big one):** what — if anything — may leave the device for a
