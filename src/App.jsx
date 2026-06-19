@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, forwardRef } from "react";
+import React, { useState, useMemo, useRef, useEffect, forwardRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from "recharts";
@@ -7,7 +7,7 @@ import {
   Activity, HeartPulse, Moon, Footprints, Dumbbell, Flame, Wind, FileText, Send,
   Copy, Check, AlertTriangle, TrendingUp, TrendingDown, Minus, ShieldCheck, ChevronRight,
   ChevronLeft, Database, FileSpreadsheet, FileCode, CheckCircle2, Stethoscope, ClipboardList, ThumbsUp,
-  Download, Calculator, Unlock, Clock, Trophy, Target, CalendarDays, Sparkles, History,
+  Download, Calculator, Unlock, Clock, Trophy, Target, CalendarDays, Sparkles, History, Star, Plus,
 } from "lucide-react";
 import { logFeedback } from "./feedback.js";
 import { computeHistoricalBest, computeDailyScores } from "./healthEngine.js";
@@ -15,7 +15,14 @@ import { buildCoachParts, generateCoachMessage, weeklySummary, bedtimeClock } fr
 import { ingestFiles } from "./ingest/index.js";
 import { normalizeRecords, parseCsvText, CORE_FIELDS, FIELD_LABELS } from "./ingest/schema.js";
 import { GuidedMapping } from "./ingest/mapping.jsx";
+import { getActiveLens, LENS_OPTIONS, DEFAULT_SECTION_ORDER } from "./lenses/index.js";
 import sampleHistoryCsv from "../samples/sample_garmin_history.csv?raw";
+
+// Persist the selected condition lenses (ids only — no PHI) so the focus sticks.
+const CONDITIONS_KEY = "visitpulse.conditions";
+function loadConditions() {
+  try { const v = JSON.parse(localStorage.getItem(CONDITIONS_KEY)); return Array.isArray(v) ? v : []; } catch (_) { return []; }
+}
 
 /* ------------------------------------------------------------------ */
 /* Config                                                              */
@@ -200,19 +207,27 @@ function leadLine(t) {
   return { text: `${t.label} stable${chg}.`, tone: "ok" };
 }
 
-function buildContextualBrief(trends, ctx) {
+export function buildContextualBrief(trends, ctx, lens) {
   const prof = CLINICIAN_PROFILES[ctx.clinicianType] || CLINICIAN_PROFILES.general;
   const comp = CHIEF_COMPLAINTS[ctx.chiefComplaint] || CHIEF_COMPLAINTS.general;
+  // Active condition lens (config, not forks). Falls back to a no-op general lens
+  // so a missing lens reproduces the original behavior exactly.
+  const L = lens || { id: "general", displayName: "", featuredSignals: [], briefFraming: { conditionLine: null, sectionOrder: DEFAULT_SECTION_ORDER, suggestedQuestions: [], trackFactors: [] } };
+  const featured = new Set(L.featuredSignals || []);
   const byKey = Object.fromEntries(trends.map((t) => [t.key, t]));
   const order = prof.priority;
   const rank = (k) => { const i = order.indexOf(k); return i === -1 ? 99 : i; };
   const isGeneral = ctx.chiefComplaint === "general" || !comp.signals.length;
 
+  // Relevant signals = the complaint's (or profile's) signals, plus any the lens
+  // features. Lens-featured signals surface even under a specific complaint.
   let relevantKeys = (comp.signals.length ? comp.signals : order).slice();
+  if (featured.size) relevantKeys = relevantKeys.concat([...featured]);
   relevantKeys = [...new Set(relevantKeys)].sort((a, b) => rank(a) - rank(b));
   const relevantSet = new Set(relevantKeys);
 
-  const flaggedSort = (a, b) => (Number(b.flagged) - Number(a.flagged)) || (rank(a.key) - rank(b.key));
+  // Order: flagged first (never bury a flag), then lens-featured, then priority.
+  const flaggedSort = (a, b) => (Number(b.flagged) - Number(a.flagged)) || (Number(featured.has(b.key)) - Number(featured.has(a.key))) || (rank(a.key) - rank(b.key));
   const lead = relevantKeys.map((k) => byKey[k]).filter(Boolean).sort(flaggedSort);
 
   const others = trends.filter((t) => !relevantSet.has(t.key));
@@ -233,16 +248,22 @@ function buildContextualBrief(trends, ctx) {
   const questions = [];
   if (comp.q) questions.push(comp.q);
   allFlagged.forEach((t) => { if (t.q && !questions.includes(t.q)) questions.push(t.q); });
+  for (const q of L.briefFraming.suggestedQuestions || []) if (!questions.includes(q)) questions.push(q);
   if (questions.length === 0) questions.push("No data-driven follow-up flags this period; routine review.");
 
   const complaintShort = comp.label.split(" / ")[0];
   const reason = `Patient is sharing 30 days of consumer wearable data (Garmin via Apple Health) ahead of a ${prof.frame}${isGeneral ? "" : ` regarding ${complaintShort.toLowerCase()}`} to give relevant context on recent changes.`;
-  const headerLabel = `${prof.label}${isGeneral ? "" : " / " + complaintShort}`;
+  const condLabel = L.id && L.id !== "general" ? ` · ${L.displayName}` : "";
+  const headerLabel = `${prof.label}${isGeneral ? "" : " / " + complaintShort}${condLabel}`;
   const keyTrends = allFlagged.map(trendSentence);
 
   return { prof, comp, isGeneral, complaintShort, lead, otherFlagged, otherStable, allFlagged,
     flagged: allFlagged, hasFlags: allFlagged.length > 0, missing, relevance, questions, why: comp.why,
-    reason, headerLabel, keyTrends };
+    reason, headerLabel, keyTrends,
+    conditionFraming: L.briefFraming.conditionLine || null,
+    trackFactors: L.briefFraming.trackFactors || [],
+    sectionOrder: L.briefFraming.sectionOrder || DEFAULT_SECTION_ORDER,
+    lensId: L.id, lensName: L.displayName };
 }
 
 function buildPortalMessage(brief) {
@@ -281,23 +302,31 @@ function buildFHIR(trends) {
   return JSON.stringify({ resourceType: "Bundle", type: "collection", entry: obs }, null, 2);
 }
 
-function briefPlainText(brief) {
-  const L = [];
-  L.push("PRE-VISIT WEARABLE SUMMARY (generated " + TODAY + ")");
-  L.push("Visit context: " + brief.headerLabel, "");
-  L.push("REASON FOR SHARING", brief.reason, "");
-  if (brief.why) L.push("WHY THESE SIGNALS", brief.why, "");
-  L.push("KEY WEARABLE TRENDS");
-  if (brief.hasFlags) brief.keyTrends.forEach((k) => L.push("- " + k));
-  else L.push("- No meaningful shifts from baseline this period.");
-  L.push("", "POSSIBLE RELEVANCE", brief.relevance, "");
-  L.push("SUGGESTED VISIT QUESTIONS");
-  brief.questions.forEach((q) => L.push("- " + q));
-  L.push("", "DATA LIMITATIONS");
-  L.push("Consumer wrist wearable, not FDA-cleared diagnostic equipment. Affected by motion/fit; some days may be missing. 7-day vs 21-day window; short-term variation expected.", "");
-  L.push("DISCLAIMER");
-  L.push("This is patient-generated wearable data and should be interpreted as context, not diagnosis. Clinician-in-the-loop; VisitPulse does not interpret, triage, or make recommendations.");
-  return L.join("\n");
+// Section renderers keyed by section name; the active lens's sectionOrder drives
+// the order. Sections with no content (e.g. conditionFraming/trackFactors for the
+// general lens) emit nothing, so the default output is unchanged.
+const BRIEF_SECTIONS = {
+  reason: (b) => ["REASON FOR SHARING", b.reason],
+  conditionFraming: (b) => (b.conditionFraming ? ["CONDITION FRAMING", b.conditionFraming] : null),
+  why: (b) => (b.why ? ["WHY THESE SIGNALS", b.why] : null),
+  keyTrends: (b) => ["KEY WEARABLE TRENDS", ...(b.hasFlags ? b.keyTrends.map((k) => "- " + k) : ["- No meaningful shifts from baseline this period."])],
+  relevance: (b) => ["POSSIBLE RELEVANCE", b.relevance],
+  questions: (b) => ["SUGGESTED VISIT QUESTIONS", ...b.questions.map((q) => "- " + q)],
+  trackFactors: (b) => (b.trackFactors && b.trackFactors.length ? ["SYMPTOMS & FACTORS TO TRACK", ...b.trackFactors.map((f) => "- " + f)] : null),
+  limitations: () => ["DATA LIMITATIONS", "Consumer wrist wearable, not FDA-cleared diagnostic equipment. Affected by motion/fit; some days may be missing. 7-day vs 21-day window; short-term variation expected."],
+  disclaimer: () => ["DISCLAIMER", "This is patient-generated wearable data and should be interpreted as context, not diagnosis. Clinician-in-the-loop; VisitPulse does not interpret, triage, or make recommendations."],
+};
+
+export function briefPlainText(brief) {
+  const out = ["PRE-VISIT WEARABLE SUMMARY (generated " + TODAY + ")", "Visit context: " + brief.headerLabel];
+  const order = brief.sectionOrder || DEFAULT_SECTION_ORDER;
+  for (const key of order) {
+    const render = BRIEF_SECTIONS[key];
+    if (!render) continue;
+    const lines = render(brief);
+    if (lines && lines.length) out.push("", ...lines);
+  }
+  return out.join("\n");
 }
 
 /* ------------------------------------------------------------------ */
@@ -726,12 +755,26 @@ export default function VisitPulse() {
   const [parsing, setParsing] = useState(null); // { progress: 0..1, name } while streaming a large export
   const [ingest, setIngest] = useState(null);   // full ingestion result (sources, provenance, conflicts)
   const [mapping, setMapping] = useState(null);  // an unmapped tabular input -> guided column mapping
+  const [conditions, setConditions] = useState(loadConditions); // selected condition lens ids
+
+  // Active condition lens (config, not forks). No selection -> general (default
+  // behaviour). One -> that lens. Several -> merged (comorbidity).
+  const activeLens = useMemo(() => getActiveLens(conditions), [conditions]);
+  const featuredSet = useMemo(() => new Set(activeLens.featuredSignals || []), [activeLens]);
+  useEffect(() => { try { localStorage.setItem(CONDITIONS_KEY, JSON.stringify(conditions)); } catch (_) { /* storage blocked */ } }, [conditions]);
+  const toggleCondition = (id) => setConditions((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+  // Quick-add a preset label to the free-text note (used on the Visit context screen).
+  const addToNote = (label) => {
+    const cur = visitContext.note || "";
+    if (cur.toLowerCase().includes(label.toLowerCase())) return;
+    setCtx({ note: cur ? `${cur}, ${label}` : label });
+  };
 
   // data = FULL history (for the coach engine). recentData = last 30 days, which
   // is what the clinical pre-visit flow (preview/trends/brief) operates on. D1.
   const recentData = useMemo(() => (data ? data.slice(-RECENT_WINDOW_DAYS) : null), [data]);
   const trends = useMemo(() => computeTrends(recentData), [recentData]);
-  const brief = useMemo(() => (trends.length ? buildContextualBrief(trends, visitContext) : null), [trends, visitContext]);
+  const brief = useMemo(() => (trends.length ? buildContextualBrief(trends, visitContext, activeLens) : null), [trends, visitContext, activeLens]);
   const portalMsg = useMemo(() => (brief ? buildPortalMessage(brief) : ""), [brief]);
   const fhir = useMemo(() => (trends.length ? buildFHIR(trends) : ""), [trends]);
 
@@ -852,6 +895,27 @@ export default function VisitPulse() {
             ))}
           </div>
           <span className="hidden text-xs text-slate-400 sm:inline">{experience === "coach" ? "Find your best self in your own history." : "A one-page brief for your clinician."}</span>
+        </div>
+      </div>
+
+      {/* Condition focus (lens) selector: single or multi-select; config-driven. */}
+      <div className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2 px-5 py-2.5">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Condition focus</span>
+          <button onClick={() => setConditions([])}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${conditions.length === 0 ? "border-teal-300 bg-teal-50 text-teal-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+            General
+          </button>
+          {LENS_OPTIONS.map((o) => {
+            const on = conditions.includes(o.id);
+            return (
+              <button key={o.id} onClick={() => toggleCondition(o.id)}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition ${on ? "border-teal-300 bg-teal-50 text-teal-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                {on ? "✓ " : ""}{o.label}
+              </button>
+            );
+          })}
+          {conditions.length > 1 && <span className="text-xs text-slate-400">comorbidity — presets merged, each hero shown</span>}
         </div>
       </div>
 
@@ -1020,6 +1084,9 @@ export default function VisitPulse() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Trend analysis</h1>
             <p className="mt-1 text-slate-500">Last 7 days vs the previous 21. <span className="font-medium text-amber-600">{flaggedCount} signal{flaggedCount === 1 ? "" : "s"} flagged.</span> Shaded band = recent window.</p>
+            {featuredSet.size > 0 && (
+              <p className="mt-1 flex items-center gap-1 text-sm text-teal-700"><Star size={13} className="fill-teal-400 text-teal-500" /> Starred signals matter most for {activeLens.displayName}.</p>
+            )}
 
             <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
               <div className="mb-3 flex flex-wrap gap-1.5">
@@ -1053,7 +1120,7 @@ export default function VisitPulse() {
                     const Icon = t.icon;
                     return (
                       <tr key={t.key} className={t.flagged ? "bg-amber-50/30" : ""}>
-                        <td className="px-4 py-3"><div className="flex items-center gap-2 font-medium text-slate-700"><Icon size={15} style={{ color: SIGNAL_COLORS[t.key] }} />{t.label}</div></td>
+                        <td className="px-4 py-3"><div className="flex items-center gap-2 font-medium text-slate-700"><Icon size={15} style={{ color: SIGNAL_COLORS[t.key] }} />{t.label}{featuredSet.has(t.key) && <Star size={12} className="fill-teal-400 text-teal-500" />}</div></td>
                         <td className="px-4 py-3 text-slate-500">{fmt(t.baseline, t.decimals)} {t.unit}</td>
                         <td className="px-4 py-3 font-medium text-slate-700">{fmt(t.recent, t.decimals)} {t.unit}</td>
                         <td className="px-4 py-3">{t.pct === null ? <span className="text-slate-300">-</span> : <span className={t.direction === "concerning" ? "font-medium text-amber-600" : t.direction === "improving" ? "font-medium text-emerald-600" : "text-slate-400"}>{t.pct > 0 ? "+" : ""}{t.pct.toFixed(0)}%</span>}</td>
@@ -1099,6 +1166,33 @@ export default function VisitPulse() {
               </div>
             </div>
 
+            {(activeLens.symptomPresets.length > 0 || activeLens.factorPresets.length > 0) && (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="text-sm font-medium text-slate-700">Common for {activeLens.displayName} — tap to add to your note</div>
+                <p className="mt-0.5 text-xs text-slate-400">Presets come from the selected condition lens. Adding one just appends the label to the free-text note above — shared verbatim, never interpreted.</p>
+                {activeLens.symptomPresets.length > 0 && (
+                  <div className="mt-3">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Symptoms</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {activeLens.symptomPresets.map((p) => (
+                        <button key={p.id} onClick={() => addToNote(p.label)} className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition hover:border-teal-300 hover:bg-teal-50"><Plus size={11} />{p.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {activeLens.factorPresets.length > 0 && (
+                  <div className="mt-3">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Factors / triggers</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {activeLens.factorPresets.map((p) => (
+                        <button key={p.id} onClick={() => addToNote(p.label)} className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition hover:border-teal-300 hover:bg-teal-50"><Plus size={11} />{p.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {visitContext.chiefComplaint !== "general" && (
               <div className="mt-4 flex items-start gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
                 <ShieldCheck size={16} className="mt-0.5 shrink-0" />
@@ -1139,6 +1233,12 @@ export default function VisitPulse() {
               <div className="space-y-5 p-5">
                 <Section title="Reason for sharing"><p>{brief.reason}</p></Section>
 
+                {brief.conditionFraming && (
+                  <div className="flex items-start gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+                    <ShieldCheck size={16} className="mt-0.5 shrink-0" /><span>{brief.conditionFraming}</span>
+                  </div>
+                )}
+
                 <div>
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Most relevant to this visit</div>
                   {brief.why && <p className="mb-2 text-sm italic text-slate-500">{brief.why}</p>}
@@ -1168,6 +1268,12 @@ export default function VisitPulse() {
                 <Section title="Suggested visit questions">
                   <ul className="space-y-1.5">{brief.questions.map((q, i) => (<li key={i} className="flex gap-2"><ChevronRight size={16} className="mt-0.5 shrink-0 text-teal-500" />{q}</li>))}</ul>
                 </Section>
+
+                {brief.trackFactors && brief.trackFactors.length > 0 && (
+                  <Section title="Symptoms & factors to track">
+                    <ul className="space-y-1.5">{brief.trackFactors.map((f, i) => (<li key={i} className="flex gap-2"><ChevronRight size={16} className="mt-0.5 shrink-0 text-teal-500" />{f}</li>))}</ul>
+                  </Section>
+                )}
 
                 <Section title="Data limitations">
                   <p>Readings are from a consumer wrist wearable, not FDA-cleared diagnostic equipment. Values can be affected by motion, fit, and skin contact; some days may be missing{brief.missing.length ? ` (limited this period: ${brief.missing.map((m) => m.label.toLowerCase()).join(", ")})` : ""}. Trends reflect a 7-day vs 21-day window and short-term variation is expected.</p>

@@ -128,3 +128,15 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   only "none" registered), index.js (getLens/getActiveLens/LENS_OPTIONS).
 - tests/lenses.test.js: 9 tests (load, default reproduces baseline, single +
   multi-select dedup merge, hero registry seam). Suite 61/61 PASS. Build PASS.
+
+**2026-06-15 00:20 UTC — Session 4 Phase B/C/D: lens wired into UI**
+- Condition selector bar (General + 4 chips, single/multi-select) under the mode
+  toggle; selection persisted to localStorage (ids only). activeLens = getActiveLens.
+- Brief is lens-aware: buildContextualBrief(trends, ctx, lens) adds condition
+  framing line, lens suggested questions, featured-signal ordering, track-factors
+  section, and a "· <condition>" header; briefPlainText is section-order-driven
+  (BRIEF_SECTIONS). DEFAULT lens = byte-identical to before.
+- Trends: lens-featured signals get a star + a subtitle note. Visit context shows
+  condition symptom/factor preset chips that quick-add to the free-text note.
+- Exported buildContextualBrief/briefPlainText; tests/brief.lens.test.js (default
+  baseline, condition reframe, multi-condition merge). Suite 67/67 PASS. Build PASS.
