@@ -120,3 +120,11 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   MORNING-BRIEF.md (live deploy URL + session-3 summary).
 - Confirmed Vercel is connected + auto-deploys this branch; pushed session-3 work
   so the ingestion layer goes live. Build PASS; tests 52/52.
+
+**2026-06-15 00:13 UTC — Session 4 Phase A: condition lens module**
+- New src/lenses/: schema.js (lens shape + normalizeLens + mergeLenses + default
+  section order + HERO_SIGNALS), configs.js (general default + 4 stubs:
+  long_covid_mecfs, pots_dysautonomia, migraine, lyme), heroRegistry.js (seam;
+  only "none" registered), index.js (getLens/getActiveLens/LENS_OPTIONS).
+- tests/lenses.test.js: 9 tests (load, default reproduces baseline, single +
+  multi-select dedup merge, hero registry seam). Suite 61/61 PASS. Build PASS.

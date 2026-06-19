@@ -98,3 +98,29 @@ decision, why, and how to reverse it if you disagree.
 - **Why:** Real exports are unavailable in this environment; shipping defensive
   adapters + a universal fallback beats blocking. Deterministic and safe.
 - **Reverse:** Correct field mappings per ADAPTERS.md when a real export arrives.
+
+### D11 — Condition lenses are config objects in `src/lenses/` (not code forks)
+- **Decision:** Each condition is one config object (presets, heroSignal,
+  featuredSignals, featuredCorrelations, briefFraming). `getActiveLens(ids)`
+  merges one-or-more selected conditions (dedup presets, union featured + brief
+  framing). A `heroRegistry` maps heroSignal keys -> deterministic fns (seam;
+  empty today). Engines/components read the active lens — no `if(condition===…)`.
+- **Why:** One codebase serves many communities; adding a condition later is
+  editing a config object. Keeps engines deterministic + identical across conditions.
+- **Reverse:** Delete `src/lenses/`; the brief/trends fall back to the general lens
+  path (which equals today's behavior).
+
+### D12 — Default lens reproduces current behavior exactly; 4 conditions are stubs
+- **Decision:** `general` lens has empty presets / no featured signals / canonical
+  section order, so brief + trends are byte-identical to before. long_covid_mecfs,
+  pots_dysautonomia, migraine, lyme ship as well-structured STUBS (sensible
+  presets + framing) with heroSignal keys that have no computation yet.
+- **Why:** Non-breaking; later prompts fill in hero computations via the registry.
+- **Reverse:** n/a (additive). Edit configs.js to evolve a condition.
+
+### D13 — Persist selected conditions to localStorage (ids only)
+- **Decision:** Selected condition ids persist in `localStorage` key
+  `visitpulse.conditions` (a JSON array of ids). No health data is stored.
+- **Why:** Prompt asks for persistence "consistent with how the app persists";
+  ids are not PHI, so the privacy claim stays true.
+- **Reverse:** Remove the load/save effect; selection becomes session-only state.

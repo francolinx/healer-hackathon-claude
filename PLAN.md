@@ -61,3 +61,25 @@ Order (durable framework + safety net FIRST, then adapters):
 
 Guardrails: additive/non-breaking, client-side only, deterministic (no LLM),
 demo-never-breaks (sample fallback + graceful degrade to guided mapping).
+
+---
+
+# PLAN (session 4) — Condition "Lens" architecture (config, not forks)
+
+A lens = a config object per condition (presets, hero signal, featured signals,
+brief framing). Deterministic engines unchanged; only config varies. Default lens
+reproduces today's behavior exactly.
+
+- [ ] A. `src/lenses/`: schema + merge/getActiveLens, default (general) + 4 stubs
+      (long_covid_mecfs, pots_dysautonomia, migraine, lyme), heroRegistry seam.
+      Unit tests (load, default presets, multi-select dedup merge). LENSES.md.
+- [ ] B. Condition selector UI (single + multi-select) under the mode toggle,
+      persisted to localStorage (condition ids only — no PHI).
+- [ ] C. Condition-aware brief: buildContextualBrief(trends, ctx, lens) — featured
+      signal ordering, condition framing line, condition suggested questions,
+      track-factors section, section order via lens. Default = byte-identical.
+- [ ] D. Condition-aware trends (featured-signal badge) + visit-context preset
+      chips (quick-add to note). Default = unchanged.
+- [ ] E. Docs: LENSES.md + NIGHT-LOG/DECISIONS/CLAUDE/README/TASKS.
+
+Guardrails: config not forks, additive, deterministic, client-side, demo-never-breaks.
