@@ -48,6 +48,20 @@ describe("condition lens reframes the brief (config-driven)", () => {
   });
 });
 
+describe("brief text folds in condition hero facts", () => {
+  const brief = buildContextualBrief(TRENDS, ctx, getActiveLens(["pots_dysautonomia"]));
+  const heroList = [{ title: "Heart-rate patterns & activity tolerance", summary: "wearable proxies", rows: [{ key: "hr_elevation", label: "Resting HR vs baseline", value: "+12 bpm", detail: "recent 70 vs baseline 58" }], notes: [], gaps: ["Standing (orthostatic) HR isn't in wearable exports."] }];
+  it("includes CONDITION FOCUS with rows + the honest gap when hero facts are passed", () => {
+    const txt = briefPlainText(brief, heroList);
+    expect(txt).toContain("CONDITION FOCUS");
+    expect(txt).toContain("Resting HR vs baseline: +12 bpm");
+    expect(txt).toContain("orthostatic");
+  });
+  it("omits CONDITION FOCUS when no hero facts are passed", () => {
+    expect(briefPlainText(brief, [])).not.toContain("CONDITION FOCUS");
+  });
+});
+
 describe("multi-condition brief merges suggested questions", () => {
   const lens = getActiveLens(["long_covid_mecfs", "pots_dysautonomia"]);
   const brief = buildContextualBrief(TRENDS, ctx, lens);

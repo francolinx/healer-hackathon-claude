@@ -161,3 +161,11 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   sleep->attack (detected, lag1, ranked #1) vs spurious steps (weaker), lyme flare,
   PEM, missing-data safety, registry dispatch. Updated lenses.test seam test.
 - Suite 85/85 PASS. Build PASS.
+
+**2026-06-15 00:35 UTC — Session 5 Phase C: hero facts in the brief**
+- Wired computeHero into App: heroFactsList (one per selected condition's heroSignal;
+  comorbidity shows each; general -> none), from full history.
+- HeroFocus component renders a deterministic "Condition focus" section in the brief
+  (rows, proxy patterns, notes, honest gaps). briefPlainText(brief, heroList) folds it
+  into copy/PDF after the condition framing; PrintableBrief shows it too.
+- tests/brief.lens.test.js: hero text folded in / omitted. Suite 87/87 PASS. Build PASS.

@@ -15,7 +15,7 @@ import { buildCoachParts, generateCoachMessage, weeklySummary, bedtimeClock } fr
 import { ingestFiles } from "./ingest/index.js";
 import { normalizeRecords, parseCsvText, CORE_FIELDS, FIELD_LABELS } from "./ingest/schema.js";
 import { GuidedMapping } from "./ingest/mapping.jsx";
-import { getActiveLens, LENS_OPTIONS, DEFAULT_SECTION_ORDER } from "./lenses/index.js";
+import { getActiveLens, LENS_OPTIONS, DEFAULT_SECTION_ORDER, getHero } from "./lenses/index.js";
 import sampleHistoryCsv from "../samples/sample_garmin_history.csv?raw";
 
 // Persist the selected condition lenses (ids only — no PHI) so the focus sticks.
@@ -317,14 +317,35 @@ const BRIEF_SECTIONS = {
   disclaimer: () => ["DISCLAIMER", "This is patient-generated wearable data and should be interpreted as context, not diagnosis. Clinician-in-the-loop; VisitPulse does not interpret, triage, or make recommendations."],
 };
 
-export function briefPlainText(brief) {
+// Deterministic plain-text for the condition hero facts (copy/PDF).
+function heroPlainText(list) {
+  if (!list || !list.length) return [];
+  const lines = ["CONDITION FOCUS"];
+  for (const h of list) {
+    lines.push("- " + h.title + (h.summary ? ": " + h.summary : ""));
+    if (h.reason && (!h.rows || !h.rows.length)) lines.push("  - " + h.reason);
+    for (const r of h.rows || []) lines.push(`  - ${r.label}: ${r.value}${r.detail ? " (" + r.detail + ")" : ""}`);
+    for (const p of h.proxyPatterns || []) lines.push(`  - ${p.label}: r=${p.r} (${p.strength}, n=${p.n})`);
+    for (const n of h.notes || []) lines.push("  note: " + n);
+    for (const g of h.gaps || []) lines.push("  limitation: " + g);
+  }
+  return lines;
+}
+
+export function briefPlainText(brief, heroList) {
   const out = ["PRE-VISIT WEARABLE SUMMARY (generated " + TODAY + ")", "Visit context: " + brief.headerLabel];
   const order = brief.sectionOrder || DEFAULT_SECTION_ORDER;
   for (const key of order) {
     const render = BRIEF_SECTIONS[key];
-    if (!render) continue;
-    const lines = render(brief);
-    if (lines && lines.length) out.push("", ...lines);
+    if (render) {
+      const lines = render(brief);
+      if (lines && lines.length) out.push("", ...lines);
+    }
+    // Condition hero facts render right after the condition framing line.
+    if (key === "conditionFraming") {
+      const hero = heroPlainText(heroList);
+      if (hero.length) out.push("", ...hero);
+    }
   }
   return out.join("\n");
 }
@@ -403,7 +424,7 @@ const printToneCls = { flag: "bg-amber-500", ok: "bg-emerald-500", muted: "bg-sl
 /* Clean, self-contained one-page document for the CURRENT lens.       */
 /* Reuses the same deterministic brief object - no separate content.   */
 /* ------------------------------------------------------------------ */
-const PrintableBrief = forwardRef(function PrintableBrief({ brief }, ref) {
+const PrintableBrief = forwardRef(function PrintableBrief({ brief, heroList }, ref) {
   if (!brief) return <div ref={ref} />;
   return (
     <div ref={ref} className="bg-white p-8 font-sans text-slate-800">
@@ -420,6 +441,27 @@ const PrintableBrief = forwardRef(function PrintableBrief({ brief }, ref) {
           <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Reason for sharing</div>
           <p>{brief.reason}</p>
         </div>
+
+        {brief.conditionFraming && (
+          <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-teal-800">{brief.conditionFraming}</div>
+        )}
+
+        {heroList && heroList.length > 0 && (
+          <div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Condition focus</div>
+            {heroList.map((h, idx) => (
+              <div key={idx} className="mb-2">
+                <div className="font-medium text-slate-700">{h.title}{h.summary ? `: ${h.summary}` : ""}</div>
+                {h.reason && (!h.rows || !h.rows.length) && <p className="text-slate-600">{h.reason}</p>}
+                <ul className="ml-1 space-y-0.5">
+                  {(h.rows || []).map((r) => <li key={r.key}>• {r.label}: {r.value}{r.detail ? ` (${r.detail})` : ""}</li>)}
+                  {(h.proxyPatterns || []).map((p, i) => <li key={i}>• {p.label}: r={p.r} ({p.strength}, n={p.n})</li>)}
+                </ul>
+                {(h.gaps || []).map((g, i) => <p key={i} className="text-xs italic text-slate-500">{g}</p>)}
+              </div>
+            ))}
+          </div>
+        )}
 
         <div>
           <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Most relevant to this visit</div>
@@ -561,6 +603,41 @@ function IngestionSummary({ ingest }) {
           {otherWarnings.slice(0, 4).map((w, i) => <li key={i} className="text-xs text-slate-400">{w.file}: {w.message}</li>)}
         </ul>
       )}
+    </div>
+  );
+}
+
+// Renders the deterministic condition hero facts (one card per selected condition).
+function HeroFocus({ list }) {
+  if (!list || !list.length) return null;
+  return (
+    <div>
+      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Condition focus</div>
+      <div className="space-y-3">
+        {list.map((h, idx) => (
+          <div key={idx} className="rounded-xl border border-teal-100 bg-teal-50/40 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Activity size={15} className="text-teal-600" />{h.title}</div>
+            {h.summary && <p className="mt-1 text-sm leading-relaxed text-slate-600">{h.summary}</p>}
+            {h.reason && (!h.rows || !h.rows.length) && <p className="mt-1 text-sm text-amber-700">{h.reason}</p>}
+            {h.rows && h.rows.length > 0 && (
+              <ul className="mt-2 space-y-1 text-sm text-slate-600">
+                {h.rows.map((r) => (
+                  <li key={r.key} className="flex flex-wrap items-baseline gap-x-2"><span className="font-medium text-slate-700">{r.label}:</span><span className="tabular-nums">{r.value}</span>{r.detail && <span className="text-xs text-slate-400">— {r.detail}</span>}</li>
+                ))}
+              </ul>
+            )}
+            {h.proxyPatterns && h.proxyPatterns.length > 0 && (
+              <ul className="mt-2 space-y-1 text-sm text-slate-600">
+                {h.proxyPatterns.map((p, i) => (<li key={i} className="flex flex-wrap items-baseline gap-x-2"><span className="font-medium text-slate-700">{p.label}:</span><span className="tabular-nums">r={p.r}</span><span className="text-xs text-slate-400">— {p.strength}, n={p.n}</span></li>))}
+              </ul>
+            )}
+            {h.notes && h.notes.map((n, i) => <p key={i} className="mt-2 text-xs italic text-slate-500">{n}</p>)}
+            {h.gaps && h.gaps.map((g, i) => (
+              <p key={i} className="mt-2 flex items-start gap-1.5 text-xs text-slate-500"><AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-400" />{g}</p>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -775,6 +852,14 @@ export default function VisitPulse() {
   const recentData = useMemo(() => (data ? data.slice(-RECENT_WINDOW_DAYS) : null), [data]);
   const trends = useMemo(() => computeTrends(recentData), [recentData]);
   const brief = useMemo(() => (trends.length ? buildContextualBrief(trends, visitContext, activeLens) : null), [trends, visitContext, activeLens]);
+  // Condition hero computations (deterministic; full history). One per selected
+  // condition's heroSignal (comorbidity shows each). General lens -> none.
+  const heroFactsList = useMemo(() => {
+    if (!data) return [];
+    const today = data[data.length - 1] && data[data.length - 1].date;
+    const sigs = [...new Set(activeLens.heroSignals || [])].filter((s) => s && s !== "none");
+    return sigs.map((sig) => { const fn = getHero(sig); try { return fn ? fn(data, activeLens, { today }) : null; } catch (_) { return null; } }).filter(Boolean);
+  }, [data, activeLens]);
   const portalMsg = useMemo(() => (brief ? buildPortalMessage(brief) : ""), [brief]);
   const fhir = useMemo(() => (trends.length ? buildFHIR(trends) : ""), [trends]);
 
@@ -1210,7 +1295,7 @@ export default function VisitPulse() {
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-semibold tracking-tight">Clinician brief</h1>
               <div className="flex items-center gap-2">
-                <CopyBtn id="brief" copied={copied} onCopy={copy} text={briefPlainText(brief)} />
+                <CopyBtn id="brief" copied={copied} onCopy={copy} text={briefPlainText(brief, heroFactsList)} />
                 <button onClick={handleDownloadPdf}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-700 transition hover:bg-teal-100">
                   <Download size={15} /> Download PDF
@@ -1238,6 +1323,8 @@ export default function VisitPulse() {
                     <ShieldCheck size={16} className="mt-0.5 shrink-0" /><span>{brief.conditionFraming}</span>
                   </div>
                 )}
+
+                <HeroFocus list={heroFactsList} />
 
                 <div>
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Most relevant to this visit</div>
@@ -1322,7 +1409,7 @@ export default function VisitPulse() {
                 <div className="rounded-2xl border border-slate-200 bg-white">
                   <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
                     <div className="flex items-center gap-2 font-medium text-slate-700"><FileText size={16} className="text-teal-600" /> Clinician brief <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-500">{brief.headerLabel}</span></div>
-                    <CopyBtn id="brief2" copied={copied} onCopy={copy} text={briefPlainText(brief)} />
+                    <CopyBtn id="brief2" copied={copied} onCopy={copy} text={briefPlainText(brief, heroFactsList)} />
                   </div>
                   <div className="px-5 py-4 text-sm text-slate-500">One-page summary tailored to the visit, with suggested questions, limitations, and the non-diagnostic disclaimer. <button onClick={() => setScreen(4)} className="font-medium text-teal-700 underline">Review</button></div>
                 </div>
@@ -1353,7 +1440,7 @@ export default function VisitPulse() {
 
       {/* Off-screen printable brief for Download PDF (current lens). */}
       <div className="visitpulse-print" aria-hidden="true">
-        <PrintableBrief ref={printRef} brief={brief} />
+        <PrintableBrief ref={printRef} brief={brief} heroList={heroFactsList} />
       </div>
 
       <footer className="mx-auto max-w-5xl px-5 pb-8 pt-2 text-center text-xs text-slate-400">
