@@ -66,6 +66,21 @@ ADAPTERS.md, DECISIONS.md (D7–D10), NIGHT-LOG.md.
 - Validate Health Connect / Google Fit / Samsung / Fitbit / Garmin adapters
   against one real export each; flip status to ✅ and adjust `pick()` candidates.
 
+## Condition "lens" architecture  [session 4 — DONE, build/test-verified]
+Status: shipped. Config-driven lenses (no forks). See LENSES.md, DECISIONS.md (D11–D13).
+- [x] `src/lenses/` schema + merge + getActiveLens + heroRegistry seam.
+- [x] Default (general) lens reproduces baseline exactly; 4 condition stubs
+      (long_covid_mecfs, pots_dysautonomia, migraine, lyme) with presets + framing.
+- [x] Condition selector (single + multi-select), persisted to localStorage (ids only).
+- [x] Lens-aware brief (framing line, suggested Qs, featured ordering, track-factors,
+      section order), trends featured ★, visit-context preset chips.
+- [x] Tests: lenses + lens-aware brief (67 total passing).
+
+### Lenses — next prompts
+- Register each condition's hero computation via `registerHero(key, fn)` (PEM load,
+  orthostatic HR, migraine trigger correlation, Lyme flare load) — deterministic only.
+- Flip each condition status stub -> verified in LENSES.md once its hero ships.
+
 ### Waiting on the user (decisions I could not make)
 - **Privacy posture (Phase 4 gate, the big one):** what — if anything — may leave the device for a
   future weekly LLM nudge backend (on-device vs server, consent, encryption, key management).

@@ -47,10 +47,22 @@ something a clinician can read in 30 seconds. Built for the Hackers and Healers 
 - Entry point `ingestFiles(fileList)` -> `{ records, sources, provenance,
   conflicts, gapDays, completeness, unmapped, warnings }`. Deterministic, no LLM.
 
+## Condition lenses (`src/lenses/`) — config, not forks
+- A lens is a config object per condition (symptom/factor presets, heroSignal,
+  featuredSignals, briefFraming). `getActiveLens(ids)` merges one-or-more selected
+  conditions (comorbidity). `general` = default = today's behavior exactly.
+- Engines/components READ the active lens; NEVER branch on condition
+  (`if (condition === 'lyme')` is banned — add to the config instead).
+- `heroRegistry.js` maps heroSignal keys -> deterministic fns (seam; only `none`
+  today). Ships: general (default) + long_covid_mecfs/pots_dysautonomia/migraine/
+  lyme STUBS. Selection persists in localStorage (ids only). See LENSES.md.
+
 ## Code map
 - `src/App.jsx` — UI for both experiences; `data` = FULL history, `recentData` =
   last 30 days (clinical). Calls `ingestFiles`; `IngestionSummary` + `GuidedMapping`
   surface sources/fields/conflicts. `CoachView` renders the engine facts.
+  `buildContextualBrief(trends, ctx, lens)` is lens-aware (exported for tests).
+- `src/lenses/` — condition lens config + merge + hero-registry seam.
 - `src/ingest/` — ingestion layer (schema, adapters, router, reconcile, mapping).
 - `src/healthEngine.js` — the FACTS engine (pure, tested in tests/).
 - `src/coach.js` — the COMMUNICATION layer (template; LLM seam).

@@ -85,6 +85,17 @@ CSV uses the same field names as headers. Missing fields/days are handled and sh
 
 ---
 
+## Condition lenses (one codebase, many communities)
+
+Pick a **condition focus** (top bar) — long COVID/ME-CFS, POTS/dysautonomia, migraine,
+Lyme, or several at once for comorbidity. A lens is **configuration, not a code fork**
+(`src/lenses/`): it sets the symptom/factor presets, which signals are featured, and how
+the pre-visit brief is framed. The deterministic engines are identical across conditions —
+only the config changes, so adding a condition later is editing a config object. The
+**General** default reproduces the app's original behavior exactly. Condition computations
+("hero signals") attach later via a registry seam without touching the selector. See
+**LENSES.md**. (The four condition configs ship as well-structured stubs today.)
+
 ## Multi-source ingestion (any platform, especially Android)
 
 Upload **one or many files, or a `.zip`** from any platform — VisitPulse sniffs each file,
@@ -136,12 +147,14 @@ visitpulse/
     coach.js          # COMMUNICATION layer: template coach messages (+ LLM seam)
     feedback.js       # optional Supabase feedback logger (no-op when unconfigured)
     ingest/           # multi-source ingestion: schema, adapters/, router, reconcile, mapping
+    lenses/           # condition lenses: schema, configs, hero-registry seam (config not forks)
   samples/
     sample_garmin.csv          # 30-day clinical demo fixture
     sample_garmin_history.csv  # SYNTHETIC 2-year coach fixture
   tests/              # vitest: engine, coach, ingest, adapters; fixtures/ (synthetic exports)
   SCORING.md          # how the engine computes its facts
   ADAPTERS.md         # each ingestion source: format, fields, validation status
+  LENSES.md           # condition lens schema + per-condition status
   INTEGRATION-PLAN.md # future messaging/LLM design + privacy gate
 ```
 

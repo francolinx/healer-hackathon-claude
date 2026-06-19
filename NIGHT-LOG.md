@@ -140,3 +140,10 @@ Append-only log of the autonomous overnight session. Newest entries at the botto
   condition symptom/factor preset chips that quick-add to the free-text note.
 - Exported buildContextualBrief/briefPlainText; tests/brief.lens.test.js (default
   baseline, condition reframe, multi-condition merge). Suite 67/67 PASS. Build PASS.
+
+**2026-06-15 00:22 UTC — Session 4 Phase E: docs**
+- Wrote LENSES.md (schema, selection/merge, hero seam, per-condition status,
+  how-to-add). Updated CLAUDE.md (lens section + code map + "config not forks"
+  rule), README.md (condition lenses section + structure), TASKS.md (lens status +
+  next-prompt hero registrations).
+- Build PASS; tests 67/67.
